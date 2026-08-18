@@ -181,14 +181,62 @@
   </div>
 </div>
 
-<script type="importmap">
-{ "imports": { "three": "https://unpkg.com/three@0.170.0/build/three.module.js", "three/addons/": "https://unpkg.com/three@0.170.0/examples/jsm/" } }
-</script>
 <script type="module">
-import * as THREE from 'three';
-import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+const loadingMsgEl = document.getElementById('loading-msg');
+const loadingFillEl = document.getElementById('loadbar-fill');
 
-// Materialos globais precisam ser criados somente depois que THREE foi inicializado.
+function showLoadError(message){
+  if(loadingFillEl) loadingFillEl.style.width = '100%';
+  if(loadingMsgEl){
+    loadingMsgEl.textContent = message;
+    loadingMsgEl.style.color = '#ffdf8a';
+    loadingMsgEl.style.maxWidth = 'min(520px, 86vw)';
+    loadingMsgEl.style.textAlign = 'center';
+    loadingMsgEl.style.lineHeight = '1.5';
+  }
+}
+
+async function importFromCDNs(path){
+  const cdnsByPath = {
+    'build/three.module.js': [
+      'https://esm.sh/three@0.170.0',
+      'https://cdn.jsdelivr.net/npm/three@0.170.0/+esm'
+    ],
+    'examples/jsm/loaders/GLTFLoader.js': [
+      'https://esm.sh/three@0.170.0/examples/jsm/loaders/GLTFLoader.js',
+      'https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/loaders/GLTFLoader.js/+esm'
+    ]
+  };
+  const cdns = cdnsByPath[path] || [`https://esm.sh/three@0.170.0/${path}`];
+
+  let lastError;
+  for(const url of cdns){
+    try{
+      return await import(url);
+    }catch(error){
+      lastError = error;
+      console.warn(`Falha ao carregar ${url}. Tentando próximo CDN...`, error);
+    }
+  }
+  throw lastError;
+}
+
+let THREE;
+let GLTFLoader;
+try{
+  const [threeModule, gltfModule] = await Promise.all([
+    importFromCDNs('build/three.module.js'),
+    importFromCDNs('examples/jsm/loaders/GLTFLoader.js')
+  ]);
+  THREE = threeModule;
+  GLTFLoader = gltfModule.GLTFLoader;
+}catch(error){
+  console.error('Não foi possível carregar as bibliotecas do jogo:', error);
+  showLoadError('Erro ao carregar as bibliotecas 3D. Verifique sua conexão e recarregue a página.');
+  throw error;
+}
+
+// Materiais globais precisam ser criados somente depois que THREE foi inicializado.
 const goldMat = new THREE.MeshStandardMaterial({color:0xd0a72e, metalness:.72, roughness:.28});
 
 /* =========================================================================
@@ -262,7 +310,14 @@ function giveMap(){
 
 /* ============================== THREE SETUP ============================== */
 const canvas = document.getElementById('game-canvas');
-const renderer = new THREE.WebGLRenderer({canvas, antialias:true, powerPreference:'high-performance'});
+let renderer;
+try{
+  renderer = new THREE.WebGLRenderer({canvas, antialias:true, powerPreference:'high-performance'});
+}catch(error){
+  console.error('Não foi possível iniciar o WebGL:', error);
+  showLoadError('Erro ao iniciar o WebGL. Atualize o navegador ou habilite aceleração gráfica para abrir o jogo.');
+  throw error;
+}
 renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.shadowMap.enabled = true;
@@ -1427,8 +1482,8 @@ function updatePlayer(dt){
   const walking = moved && playerState.onGround;
   const t = performance.now()*0.012;
   const swing = walking ? Math.sin(t* (runKey?1.8:1) )*0.5 : 0;
-  legL.rotation.x = swing; legR.rotation.x = -swing;
-  armL.rotation.x = -swing*0.8; armR.rotation.x = swing*0.8;
+  leftLeg.rotation.x = swing; rightLeg.rotation.x = -swing;
+  leftArm.rotation.x = -swing*0.8; rightArm.rotation.x = swing*0.8;
   if(walking){
     footstepAccum += dt;
     const interval = runKey?0.28:0.42;
@@ -1574,8 +1629,8 @@ function animate(){
 /* ---------------------------- Loading fake-progress ---------------------------- */
 const loadMsgs = ['Içando as velas...','Desenrolando o mapa...','Acendendo as lanternas...','Ajustando o leme...','Pronto para zarpar!'];
 let li=0;
-const fill = document.getElementById('loadbar-fill');
-const msgEl = document.getElementById('loading-msg');
+const fill = loadingFillEl;
+const msgEl = loadingMsgEl;
 let prog=0;
 const loadTimer = setInterval(()=>{
   prog += rand(8,18);
