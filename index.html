@@ -1482,8 +1482,8 @@ function updatePlayer(dt){
   const walking = moved && playerState.onGround;
   const t = performance.now()*0.012;
   const swing = walking ? Math.sin(t* (runKey?1.8:1) )*0.5 : 0;
-  legL.rotation.x = swing; legR.rotation.x = -swing;
-  armL.rotation.x = -swing*0.8; armR.rotation.x = swing*0.8;
+  leftLeg.rotation.x = swing; rightLeg.rotation.x = -swing;
+  leftArm.rotation.x = -swing*0.8; rightArm.rotation.x = swing*0.8;
   if(walking){
     footstepAccum += dt;
     const interval = runKey?0.28:0.42;
