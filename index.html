@@ -1610,17 +1610,50 @@ const dir = new THREE.Vector3()
     if(player.position.y<-1.6){ toast('A correnteza te empurra de volta ao navio...',1800); player.position.set(SHIP_POS.x,SHIP_DECK_Y+2,SHIP_POS.z); playerState.velocityY=0; }
   }
 
-  // animação simples de caminhada
-  const walking = moved && playerState.onGround;
-  const t = performance.now()*0.012;
-  const swing = walking ? Math.sin(t* (runKey?1.8:1) )*0.5 : 0;
-  legL.rotation.x = swing; legR.rotation.x = -swing;
-  armL.rotation.x = -swing*0.8; armR.rotation.x = swing*0.8;
-  if(walking){
-    footstepAccum += dt;
-    const interval = runKey?0.28:0.42;
-    if(footstepAccum>interval){ footstepAccum=0; footstepBlip(); }
-  }
+  /* ---------- Animação humana de caminhada ---------- */
+
+const walking = moved && playerState.onGround;
+
+if(walking){
+
+  playerState.walkTime += dt * (runKey ? 11 : 7);
+
+  const swing = Math.sin(playerState.walkTime) * (runKey ? 0.65 : 0.45);
+  const bounce = Math.abs(Math.sin(playerState.walkTime)) * (runKey ? 0.045 : 0.025);
+
+  /* Pernas */
+  leftLeg.rotation.x = swing;
+  rightLeg.rotation.x = -swing;
+
+  /* Braços opostos às pernas */
+  leftArm.rotation.x = -swing * 0.75;
+  rightArm.rotation.x = swing * 0.75;
+
+  /* Pequeno balanço lateral */
+  character.rotation.z = Math.sin(playerState.walkTime * 2) * 0.025;
+
+  /* Corpo sobe e desce levemente */
+  character.position.y = bounce;
+
+  /* Cabeça acompanha o movimento */
+  headGroup.rotation.z = Math.sin(playerState.walkTime * 2) * 0.015;
+
+}else{
+
+  /* Volta suavemente à posição parada */
+  leftLeg.rotation.x = lerp(leftLeg.rotation.x,0,dt*8);
+  rightLeg.rotation.x = lerp(rightLeg.rotation.x,0,dt*8);
+
+  leftArm.rotation.x = lerp(leftArm.rotation.x,0,dt*8);
+  rightArm.rotation.x = lerp(rightArm.rotation.x,0,dt*8);
+
+  character.rotation.z = lerp(character.rotation.z,0,dt*8);
+  character.position.y = lerp(character.position.y,0,dt*8);
+
+  headGroup.rotation.z = lerp(headGroup.rotation.z,0,dt*8);
+
+  playerState.walkTime = 0;
+}
 
   // zonas / missão
   const inShipBounds = Math.abs(player.position.x-SHIP_POS.x)<deckW/2 && Math.abs(player.position.z-SHIP_POS.z)<deckL/2+1;
