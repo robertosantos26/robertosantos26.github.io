@@ -837,33 +837,441 @@ function plankHeightAt(z){
 }
 
 /* =========================== JOGADOR =========================== */
-const player = new THREE.Group();
-const bodyMat = new THREE.MeshStandardMaterial({color:0x2b3b52, roughness:.8});
-const skinMat = new THREE.MeshStandardMaterial({color:0xd9a066, roughness:.9});
-const hatMat = new THREE.MeshStandardMaterial({color:0x241708, roughness:.9});
-const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.35,0.6,4,8), bodyMat);
-torso.position.y=1.05; torso.castShadow=true;
-player.add(torso);
-const head = new THREE.Mesh(new THREE.SphereGeometry(0.28,12,12), skinMat);
-head.position.y=1.7; head.castShadow=true;
-player.add(head);
-const hat = new THREE.Mesh(new THREE.ConeGeometry(0.32,0.3,10), hatMat);
-hat.position.y=1.98; hat.castShadow=true;
-player.add(hat);
-const legL = new THREE.Mesh(new THREE.CapsuleGeometry(0.13,0.5,4,6), darkWoodMat);
-legL.position.set(-0.16,0.35,0); player.add(legL);
-const legR = legL.clone(); legR.position.x=0.16; player.add(legR);
-const armL = new THREE.Mesh(new THREE.CapsuleGeometry(0.1,0.5,4,6), bodyMat);
-armL.position.set(-0.48,1.05,0); player.add(armL);
-const armR = armL.clone(); armR.position.x=0.48; player.add(armR);
-player.traverse(o=>{if(o.isMesh)o.castShadow=true;});
 
-player.position.set(SHIP_POS.x, SHIP_DECK_Y, SHIP_POS.z);
+const player = new THREE.Group();
+
+/* ---------- Materiais ---------- */
+const skinMat = new THREE.MeshStandardMaterial({
+  color:0xc98255,
+  roughness:.9
+});
+
+const skinDarkMat = new THREE.MeshStandardMaterial({
+  color:0xa9603d,
+  roughness:.95
+});
+
+const shirtMat = new THREE.MeshStandardMaterial({
+  color:0x31506b,
+  roughness:.85
+});
+
+const shirtDarkMat = new THREE.MeshStandardMaterial({
+  color:0x20384d,
+  roughness:.9
+});
+
+const pantsMat = new THREE.MeshStandardMaterial({
+  color:0x30333a,
+  roughness:.9
+});
+
+const bootMat = new THREE.MeshStandardMaterial({
+  color:0x3a2415,
+  roughness:.95
+});
+
+const hairMat = new THREE.MeshStandardMaterial({
+  color:0x291a12,
+  roughness:1
+});
+
+const eyeMat = new THREE.MeshStandardMaterial({
+  color:0x151515,
+  roughness:.5
+});
+
+const whiteEyeMat = new THREE.MeshStandardMaterial({
+  color:0xf4eee0,
+  roughness:.7
+});
+
+const mouthMat = new THREE.MeshStandardMaterial({
+  color:0x54231d,
+  roughness:1
+});
+
+const beltMat = new THREE.MeshStandardMaterial({
+  color:0x1e1712,
+  roughness:.7,
+  metalness:.2
+});
+
+const goldMat = new THREE.MeshStandardMaterial({
+  color:0xc9a227,
+  roughness:.35,
+  metalness:.7
+});
+
+const hatMat = new THREE.MeshStandardMaterial({
+  color:0x21150e,
+  roughness:.95
+});
+
+/* ---------- Grupo do corpo ---------- */
+
+const character = new THREE.Group();
+player.add(character);
+
+/* ---------- Pernas ---------- */
+
+const leftLeg = new THREE.Group();
+const rightLeg = new THREE.Group();
+
+leftLeg.position.set(-0.17,0.82,0);
+rightLeg.position.set(0.17,0.82,0);
+
+character.add(leftLeg);
+character.add(rightLeg);
+
+/* Coxas */
+const thighGeo = new THREE.CapsuleGeometry(.145,.38,5,8);
+
+const leftThigh = new THREE.Mesh(thighGeo,pantsMat);
+leftThigh.position.y=-.18;
+leftThigh.castShadow=true;
+leftLeg.add(leftThigh);
+
+const rightThigh = leftThigh.clone();
+rightThigh.castShadow=true;
+rightLeg.add(rightThigh);
+
+/* Panturrilhas */
+const calfGeo = new THREE.CapsuleGeometry(.115,.38,5,8);
+
+const leftCalf = new THREE.Mesh(calfGeo,pantsMat);
+leftCalf.position.y=-.62;
+leftCalf.castShadow=true;
+leftLeg.add(leftCalf);
+
+const rightCalf = leftCalf.clone();
+rightCalf.castShadow=true;
+rightLeg.add(rightCalf);
+
+/* Botas */
+const bootGeo = new THREE.BoxGeometry(.23,.18,.42);
+
+const leftBoot = new THREE.Mesh(bootGeo,bootMat);
+leftBoot.position.set(0,-.9,.07);
+leftBoot.castShadow=true;
+leftLeg.add(leftBoot);
+
+const rightBoot = leftBoot.clone();
+rightBoot.castShadow=true;
+rightLeg.add(rightBoot);
+
+/* ---------- Quadril ---------- */
+
+const hips = new THREE.Mesh(
+  new THREE.CapsuleGeometry(.29,.22,5,8),
+  pantsMat
+);
+
+hips.position.y=1.03;
+hips.castShadow=true;
+character.add(hips);
+
+/* ---------- Tronco ---------- */
+
+const torso = new THREE.Mesh(
+  new THREE.CapsuleGeometry(.36,.55,6,10),
+  shirtMat
+);
+
+torso.position.y=1.42;
+torso.scale.set(1,.95,.72);
+torso.castShadow=true;
+character.add(torso);
+
+/* Camisa inferior */
+const shirtBottom = new THREE.Mesh(
+  new THREE.CylinderGeometry(.31,.35,.18,10),
+  shirtDarkMat
+);
+
+shirtBottom.position.y=1.15;
+shirtBottom.castShadow=true;
+character.add(shirtBottom);
+
+/* ---------- Cinto ---------- */
+
+const belt = new THREE.Mesh(
+  new THREE.CylinderGeometry(.34,.34,.09,12),
+  beltMat
+);
+
+belt.position.y=1.16;
+belt.castShadow=true;
+character.add(belt);
+
+/* Fivela */
+const buckle = new THREE.Mesh(
+  new THREE.BoxGeometry(.13,.13,.035),
+  goldMat
+);
+
+buckle.position.set(0,1.16,.345);
+buckle.castShadow=true;
+character.add(buckle);
+
+/* ---------- Pescoço ---------- */
+
+const neck = new THREE.Mesh(
+  new THREE.CylinderGeometry(.13,.15,.18,10),
+  skinMat
+);
+
+neck.position.y=1.83;
+neck.castShadow=true;
+character.add(neck);
+
+/* ---------- Cabeça ---------- */
+
+const headGroup = new THREE.Group();
+headGroup.position.y=2.10;
+character.add(headGroup);
+
+const head = new THREE.Mesh(
+  new THREE.SphereGeometry(.34,16,16),
+  skinMat
+);
+
+head.scale.set(.88,1,.82);
+head.castShadow=true;
+headGroup.add(head);
+
+/* ---------- Orelhas ---------- */
+
+const earGeo = new THREE.SphereGeometry(.075,10,10);
+
+const earL = new THREE.Mesh(earGeo,skinMat);
+earL.position.set(-.30,0,.0);
+headGroup.add(earL);
+
+const earR = earL.clone();
+earR.position.x=.30;
+headGroup.add(earR);
+
+/* ---------- Cabelo ---------- */
+
+const hair = new THREE.Mesh(
+  new THREE.SphereGeometry(.35,14,8,0,Math.PI*2,0,Math.PI*.45),
+  hairMat
+);
+
+hair.position.y=.08;
+hair.scale.set(1,.85,1);
+hair.castShadow=true;
+headGroup.add(hair);
+
+/* costeletas */
+const sideHairL = new THREE.Mesh(
+  new THREE.BoxGeometry(.07,.22,.16),
+  hairMat
+);
+
+sideHairL.position.set(-.285,-.04,.03);
+headGroup.add(sideHairL);
+
+const sideHairR = sideHairL.clone();
+sideHairR.position.x=.285;
+headGroup.add(sideHairR);
+
+/* ---------- Olhos ---------- */
+
+const eyeGeo = new THREE.SphereGeometry(.055,10,10);
+
+const eyeL = new THREE.Mesh(eyeGeo,whiteEyeMat);
+eyeL.position.set(-.115,.04,.315);
+eyeL.scale.set(1,.9,.45);
+headGroup.add(eyeL);
+
+const eyeR = eyeL.clone();
+eyeR.position.x=.115;
+headGroup.add(eyeR);
+
+/* Pupilas */
+const pupilGeo = new THREE.SphereGeometry(.026,8,8);
+
+const pupilL = new THREE.Mesh(pupilGeo,eyeMat);
+pupilL.position.set(-.115,.04,.342);
+headGroup.add(pupilL);
+
+const pupilR = pupilL.clone();
+pupilR.position.x=.115;
+headGroup.add(pupilR);
+
+/* ---------- Nariz ---------- */
+
+const nose = new THREE.Mesh(
+  new THREE.ConeGeometry(.045,.13,8),
+  skinDarkMat
+);
+
+nose.rotation.x=Math.PI/2;
+nose.position.set(0,-.015,.34);
+headGroup.add(nose);
+
+/* ---------- Boca ---------- */
+
+const mouth = new THREE.Mesh(
+  new THREE.BoxGeometry(.13,.025,.018),
+  mouthMat
+);
+
+mouth.position.set(0,-.13,.325);
+headGroup.add(mouth);
+
+/* ---------- Barba pequena ---------- */
+
+const beard = new THREE.Mesh(
+  new THREE.SphereGeometry(.18,12,8),
+  hairMat
+);
+
+beard.scale.set(.75,.45,.5);
+beard.position.set(0,-.16,.20);
+headGroup.add(beard);
+
+/* ---------- Braços ---------- */
+
+const leftArm = new THREE.Group();
+const rightArm = new THREE.Group();
+
+leftArm.position.set(-.43,1.60,0);
+rightArm.position.set(.43,1.60,0);
+
+character.add(leftArm);
+character.add(rightArm);
+
+/* Ombros */
+const shoulderGeo = new THREE.SphereGeometry(.14,10,10);
+
+const shoulderL = new THREE.Mesh(shoulderGeo,shirtMat);
+leftArm.add(shoulderL);
+
+const shoulderR = shoulderL.clone();
+rightArm.add(shoulderR);
+
+/* Braço superior */
+const upperArmGeo = new THREE.CapsuleGeometry(.10,.34,5,8);
+
+const upperArmL = new THREE.Mesh(upperArmGeo,shirtMat);
+upperArmL.position.y=-.25;
+upperArmL.castShadow=true;
+leftArm.add(upperArmL);
+
+const upperArmR = upperArmL.clone();
+upperArmR.castShadow=true;
+rightArm.add(upperArmR);
+
+/* Cotovelo */
+const elbowGeo = new THREE.SphereGeometry(.105,8,8);
+
+const elbowL = new THREE.Mesh(elbowGeo,skinMat);
+elbowL.position.y=-.47;
+leftArm.add(elbowL);
+
+const elbowR = elbowL.clone();
+rightArm.add(elbowR);
+
+/* Antebraço */
+const forearmGeo = new THREE.CapsuleGeometry(.085,.30,5,8);
+
+const forearmL = new THREE.Mesh(forearmGeo,skinMat);
+forearmL.position.y=-.67;
+forearmL.castShadow=true;
+leftArm.add(forearmL);
+
+const forearmR = forearmL.clone();
+forearmR.castShadow=true;
+rightArm.add(forearmR);
+
+/* Mãos */
+const handGeo = new THREE.SphereGeometry(.105,10,10);
+
+const handL = new THREE.Mesh(handGeo,skinMat);
+handL.position.y=-.88;
+leftArm.add(handL);
+
+const handR = handL.clone();
+rightArm.add(handR);
+
+/* ---------- Chapéu pirata ---------- */
+
+const hatGroup = new THREE.Group();
+hatGroup.position.y=.36;
+headGroup.add(hatGroup);
+
+/* aba */
+const hatBrim = new THREE.Mesh(
+  new THREE.CylinderGeometry(.43,.43,.055,16),
+  hatMat
+);
+
+hatBrim.scale.z=.82;
+hatBrim.castShadow=true;
+hatGroup.add(hatBrim);
+
+/* copa */
+const hatTop = new THREE.Mesh(
+  new THREE.CylinderGeometry(.28,.35,.30,12),
+  hatMat
+);
+
+hatTop.position.y=.16;
+hatTop.castShadow=true;
+hatGroup.add(hatTop);
+
+/* faixa */
+const hatBand = new THREE.Mesh(
+  new THREE.CylinderGeometry(.31,.31,.075,12),
+  beltMat
+);
+
+hatBand.position.y=.08;
+hatGroup.add(hatBand);
+
+/* símbolo dourado */
+const hatMark = new THREE.Mesh(
+  new THREE.TorusGeometry(.06,.018,6,12),
+  goldMat
+);
+
+hatMark.position.set(0,.13,.31);
+hatMark.rotation.x=Math.PI/2;
+hatGroup.add(hatMark);
+
+/* ---------- Sombras ---------- */
+
+player.traverse(o=>{
+  if(o.isMesh){
+    o.castShadow=true;
+    o.receiveShadow=true;
+  }
+});
+
+/* ---------- Posição ---------- */
+
+player.position.set(
+  SHIP_POS.x,
+  SHIP_DECK_Y,
+  SHIP_POS.z
+);
+
 scene.add(player);
+
 state.startPos.copy(player.position);
 
+/* ---------- Estado do personagem ---------- */
+
 const playerState = {
-  velocityY:0, onGround:true, speed:0, yaw:0, run:false
+  velocityY:0,
+  onGround:true,
+  speed:0,
+  yaw:0,
+  run:false,
+  walkTime:0
 };
 
 /* ------------------------- Câmera terceira pessoa ------------------------- */
@@ -1117,11 +1525,21 @@ function updatePlayer(dt){
   if(len>0.05){
     mx/=len; mz/=len;
     // mover relativo à câmera (yaw)
-    const forward = new THREE.Vector3(Math.sin(camState.yaw),0,Math.cos(camState.yaw));
-    const right = new THREE.Vector3(Math.sin(camState.yaw+Math.PI/2),0,Math.cos(camState.yaw+Math.PI/2));
-    const dir = new THREE.Vector3()
-      .addScaledVector(forward, -mz)
-      .addScaledVector(right, mx);
+    const forward = new THREE.Vector3(
+  -Math.sin(camState.yaw),
+  0,
+  -Math.cos(camState.yaw)
+);
+
+const right = new THREE.Vector3(
+  Math.cos(camState.yaw),
+  0,
+  -Math.sin(camState.yaw)
+);
+
+const dir = new THREE.Vector3()
+  .addScaledVector(forward, -mz)
+  .addScaledVector(right, mx);
     if(dir.lengthSq()>0.0001){
       dir.normalize();
       const spd = runKey?speedRun:speedWalk;
