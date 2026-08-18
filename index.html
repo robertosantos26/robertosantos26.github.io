@@ -341,16 +341,11 @@ function makeSkyTexture(){
   const c=document.createElement('canvas'); c.width=2; c.height=512;
   const ctx=c.getContext('2d');
   const g=ctx.createLinearGradient(0,0,0,512);
-  g.addColorStop(0,'#082f63');
-  g.addColorStop(0.28,'#1d78ba');
-  g.addColorStop(0.58,'#7ec7e5');
-  g.addColorStop(0.82,'#d8f1f0');
-  g.addColorStop(1,'#fff1d3');
+  g.addColorStop(0,'#0b4f8f');
+  g.addColorStop(0.38,'#46a7d8');
+  g.addColorStop(0.74,'#bfe6ee');
+  g.addColorStop(1,'#f4ecd2');
   ctx.fillStyle=g; ctx.fillRect(0,0,2,512);
-  const haze=ctx.createLinearGradient(0,280,0,512);
-  haze.addColorStop(0,'rgba(255,255,255,0)');
-  haze.addColorStop(1,'rgba(255,219,170,.35)');
-  ctx.fillStyle=haze; ctx.fillRect(0,0,2,512);
   const tex=new THREE.CanvasTexture(c);
   tex.colorSpace=THREE.SRGBColorSpace;
   return tex;
@@ -408,7 +403,7 @@ const OCEAN_SIZE = 700, OCEAN_SEG=90;
 const oceanGeo = new THREE.PlaneGeometry(OCEAN_SIZE,OCEAN_SIZE,OCEAN_SEG,OCEAN_SEG);
 oceanGeo.rotateX(-Math.PI/2);
 const oceanBasePos = oceanGeo.attributes.position.array.slice();
-const oceanMat = new THREE.MeshPhysicalMaterial({color:0x126886, roughness:0.18, metalness:0.0, transmission:0.08, thickness:0.9, transparent:true, opacity:0.88, clearcoat:0.55, clearcoatRoughness:0.18});
+const oceanMat = new THREE.MeshStandardMaterial({color:0x176f92, roughness:0.32, metalness:0.04, transparent:true, opacity:0.9});
 const ocean = new THREE.Mesh(oceanGeo, oceanMat);
 ocean.receiveShadow = true;
 scene.add(ocean);
@@ -433,25 +428,33 @@ function carregarOceanoGLB(){
     './animated_ocean_scene_tutorial_example_1.glb',
     gltf=>{
       oceanModel = gltf.scene;
-      oceanModel.position.set(0,-0.08,0);
-      oceanModel.scale.setScalar(1);
       oceanModel.traverse(o=>{
+        if(/sky|ceu|cloud|nuvem|sun|sol|background|dome/i.test(o.name)){
+          o.visible = false;
+        }
         if(o.isMesh){
           o.receiveShadow = true;
+          o.frustumCulled = false;
           if(o.material){
             const mats = Array.isArray(o.material) ? o.material : [o.material];
             mats.forEach(m=>{
               m.transparent = true;
-              if(m.opacity===1) m.opacity = .94;
-              if('roughness' in m) m.roughness = Math.min(m.roughness ?? .28, .24);
+              if(m.opacity===1) m.opacity = .88;
+              if('roughness' in m) m.roughness = Math.min(m.roughness ?? .32, .35);
               if('metalness' in m) m.metalness = 0;
             });
           }
         }
       });
+      const box = new THREE.Box3().setFromObject(oceanModel);
+      const size = box.getSize(new THREE.Vector3());
+      const center = box.getCenter(new THREE.Vector3());
+      const maxXZ = Math.max(size.x, size.z) || 1;
+      const scale = OCEAN_SIZE / maxXZ;
+      oceanModel.scale.setScalar(scale);
+      oceanModel.position.set(-center.x*scale, -0.18-box.min.y*scale, -center.z*scale);
       scene.add(oceanModel);
-      ocean.visible = false;
-      foam.visible = false;
+      // Mantém o oceano procedural por baixo para preservar horizonte/espuma e evitar que assets externos escondam o céu.
       if(gltf.animations && gltf.animations.length){
         oceanMixer = new THREE.AnimationMixer(oceanModel);
         gltf.animations.forEach(clip=>oceanMixer.clipAction(clip).play());
@@ -1154,6 +1157,7 @@ let pirateActions = [];
 let currentPirateAction = null;
 let glbHandSwordNodes = [];
 let glbSheathedSwordFromModel = null;
+let pirateModelRestY = 0;
 
 function prepararModeloPirata(root){
   root.traverse(o=>{
@@ -1210,10 +1214,11 @@ function carregarPersonagemGLB(){
         }
       });
 
-      // O arquivo atual é posado e não tem esqueleto/animações; nesse caso usamos o rig procedural
-      // para braços/pernas, mas reaproveitamos a espada do GLB quando possível.
-      character.visible = !(gltf.animations && gltf.animations.length);
-      pirateModel.visible = !!(gltf.animations && gltf.animations.length);
+      // Mantém o Chinese Pirate visível. Se o arquivo não tiver animações, fazemos
+      // uma animação procedural suave do modelo inteiro para ele não ficar estático.
+      character.visible = false;
+      pirateModel.visible = true;
+      pirateModelRestY = pirateModel.position.y;
 
       if(gltf.animations && gltf.animations.length){
         pirateMixer = new THREE.AnimationMixer(pirateModel);
@@ -1251,6 +1256,17 @@ function setPirateAction(nameHint, fallbackIndex=0){
   next.reset().fadeIn(.22).play();
   if(currentPirateAction) currentPirateAction.fadeOut(.22);
   currentPirateAction = next;
+}
+
+
+function animatePirateModel(dt, walking, runKey){
+  if(!pirateModel || pirateMixer) return;
+  const amp = walking ? (runKey ? .08 : .05) : .012;
+  const stride = Math.sin(playerState.walkTime * (walking ? 1 : .35));
+  pirateModel.position.y = lerp(pirateModel.position.y, pirateModelRestY + Math.abs(stride)*amp, dt*10);
+  pirateModel.rotation.y = Math.PI + Math.sin(playerState.walkTime*.5)*(walking?.035:.01);
+  pirateModel.rotation.z = lerp(pirateModel.rotation.z, walking ? Math.sin(playerState.walkTime*2)*.035 : 0, dt*8);
+  pirateModel.rotation.x = lerp(pirateModel.rotation.x, walking ? -Math.abs(stride)*(runKey?.045:.025) : 0, dt*8);
 }
 
 function toggleSword(){
@@ -1547,7 +1563,7 @@ function updatePlayer(dt){
     // mover relativo à câmera (yaw)
     // direção relativa à câmera: W anda para longe da câmera (para frente na tela)
     const forward = new THREE.Vector3(-Math.sin(camState.yaw),0,-Math.cos(camState.yaw));
-    const right = new THREE.Vector3(forward.z,0,-forward.x);
+    const right = new THREE.Vector3(-forward.z,0,forward.x);
     const dir = new THREE.Vector3()
       .addScaledVector(forward, -mz)
       .addScaledVector(right, mx);
@@ -1670,6 +1686,7 @@ function updatePlayer(dt){
   character.rotation.z=lerp(character.rotation.z, walking?stride2*.025:0,dt*8);
   character.position.y=lerp(character.position.y, walking?Math.abs(stride)*(runKey?.055:.032):Math.sin(performance.now()*.0018)*.012,dt*8);
   animateSword(dt, walking, runKey);
+  animatePirateModel(dt, walking, runKey);
 
   // zonas / missão
   const inShipBounds = Math.abs(player.position.x-SHIP_POS.x)<deckW/2 && Math.abs(player.position.z-SHIP_POS.z)<deckL/2+1;
