@@ -647,13 +647,161 @@ shipGroup.add(helmGroup);
 const barrelMat = new THREE.MeshStandardMaterial({color:0x7a5230, roughness:.9});
 const crateMat = new THREE.MeshStandardMaterial({color:0x9c7143, roughness:.85});
 function makeBarrel(){
-  const g = new THREE.Mesh(new THREE.CylinderGeometry(0.5,0.5,0.9,14), barrelMat);
-  g.castShadow=true; g.receiveShadow=true;
+  const g = new THREE.Group();
+
+  const wood = new THREE.MeshStandardMaterial({
+    color:0x6f4527,
+    roughness:.88
+  });
+
+  const woodDark = new THREE.MeshStandardMaterial({
+    color:0x4a2d18,
+    roughness:.95
+  });
+
+  const metal = new THREE.MeshStandardMaterial({
+    color:0x292522,
+    roughness:.55,
+    metalness:.65
+  });
+
+  // Corpo principal
+  const body = new THREE.Mesh(
+    new THREE.CylinderGeometry(.48,.52,.9,16),
+    wood
+  );
+
+  body.castShadow=true;
+  body.receiveShadow=true;
+  g.add(body);
+
+  // Leve abaulamento
+  body.scale.x=1;
+  body.scale.z=1;
+
+  // Tampas
+  const top = new THREE.Mesh(
+    new THREE.CylinderGeometry(.40,.40,.055,16),
+    woodDark
+  );
+
+  top.position.y=.48;
+  top.castShadow=true;
+  g.add(top);
+
+  const bottom = top.clone();
+  bottom.position.y=-.48;
+  g.add(bottom);
+
+  // Aros metálicos
+  for(const y of [-.32,0,.32]){
+    const ring = new THREE.Mesh(
+      new THREE.TorusGeometry(.505,.035,6,16),
+      metal
+    );
+
+    ring.rotation.x=Math.PI/2;
+    ring.position.y=y;
+    ring.castShadow=true;
+
+    g.add(ring);
+  }
+
+  // Tábuas verticais discretas
+  for(let i=0;i<8;i++){
+    const a=(i/8)*Math.PI*2;
+
+    const plank = new THREE.Mesh(
+      new THREE.BoxGeometry(.025,.78,.08),
+      woodDark
+    );
+
+    plank.position.set(
+      Math.cos(a)*.505,
+      0,
+      Math.sin(a)*.505
+    );
+
+    plank.rotation.y=-a;
+    g.add(plank);
+  }
+
+  g.userData.collisionRadius=.62;
+
+  g.traverse(o=>{
+    if(o.isMesh){
+      o.castShadow=true;
+      o.receiveShadow=true;
+    }
+  });
+
   return g;
 }
 function makeCrate(){
-  const g = new THREE.Mesh(new THREE.BoxGeometry(0.9,0.9,0.9), crateMat);
-  g.castShadow=true; g.receiveShadow=true;
+  const g = new THREE.Group();
+
+  const wood = new THREE.MeshStandardMaterial({
+    color:0x956638,
+    roughness:.9
+  });
+
+  const dark = new THREE.MeshStandardMaterial({
+    color:0x53331c,
+    roughness:1
+  });
+
+  // Caixa
+  const base = new THREE.Mesh(
+    new THREE.BoxGeometry(.9,.9,.9),
+    wood
+  );
+
+  base.castShadow=true;
+  base.receiveShadow=true;
+  g.add(base);
+
+  // Ripas horizontais
+  for(const y of [-.35,.35]){
+    for(const side of [-1,1]){
+
+      const plank = new THREE.Mesh(
+        new THREE.BoxGeometry(.96,.11,.08),
+        dark
+      );
+
+      plank.position.set(0,y,side*.455);
+      g.add(plank);
+
+      const plank2 = plank.clone();
+      plank2.rotation.y=Math.PI/2;
+      plank2.position.set(side*.455,y,0);
+      g.add(plank2);
+    }
+  }
+
+  // Cantos reforçados
+  for(const x of [-.43,.43]){
+    for(const z of [-.43,.43]){
+
+      const corner = new THREE.Mesh(
+        new THREE.BoxGeometry(.08,.96,.08),
+        dark
+      );
+
+      corner.position.set(x,0,z);
+      g.add(corner);
+    }
+  }
+
+  g.userData.collisionRadius=.68;
+
+  g.traverse(o=>{
+    if(o.isMesh){
+      o.castShadow=true;
+      o.receiveShadow=true;
+    }
+  });
+
   return g;
 }
 const shipProps = [];
@@ -680,6 +828,11 @@ crateSpots.forEach(([x,z])=>{
   c.userData.onInteract = ()=>pushProp(c);
   shipGroup.add(c);
   shipProps.push(c);
+  propColliders.push({
+  x:SHIP_POS.x+x,
+  z:SHIP_POS.z+z,
+  r:.65
+});
 });
 function pushProp(mesh){
   const dir = new THREE.Vector3().subVectors(mesh.position, new THREE.Vector3(player.position.x-SHIP_POS.x, mesh.position.y, player.position.z-SHIP_POS.z));
@@ -1556,16 +1709,55 @@ const dir = new THREE.Vector3()
   player.rotation.y = playerState.yaw;
 
   // colisão simples contra props cilíndricos
-  for(const c of propColliders){
-    if(c.r<=0) continue;
-    const dx=player.position.x-c.x, dz=player.position.z-c.z;
-    const d=Math.hypot(dx,dz);
-    const minD = c.r+0.45;
-    if(d<minD && d>0.0001){
-      player.position.x = c.x+dx/d*minD;
-      player.position.z = c.z+dz/d*minD;
+  /* ============================================================
+   COLISÃO DINÂMICA DOS OBJETOS
+   ============================================================ */
+
+for(const c of propColliders){
+
+  if(c.r<=0) continue;
+
+  let cx;
+  let cz;
+
+  if(c.object){
+
+    const worldPos = new THREE.Vector3();
+    c.object.getWorldPosition(worldPos);
+
+    cx = worldPos.x;
+    cz = worldPos.z;
+
+  }else{
+
+    cx = c.x;
+    cz = c.z;
+  }
+
+  const dx = player.position.x - cx;
+  const dz = player.position.z - cz;
+
+  const d = Math.hypot(dx,dz);
+
+  const playerRadius = .42;
+  const minD = c.r + playerRadius;
+
+  if(d < minD){
+
+    if(d > .001){
+
+      const nx = dx/d;
+      const nz = dz/d;
+
+      player.position.x = cx + nx*minD;
+      player.position.z = cz + nz*minD;
+
+    }else{
+
+      player.position.x += minD;
     }
   }
+}
 
   // colisão com paredes da cabine (bounding box simples)
   {
