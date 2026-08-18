@@ -59,6 +59,7 @@ dependências para instalar — igual ao padrão que você já usa nos seus outr
 - `Shift` — correr
 - `Espaço` — pular
 - `E` — interagir
+- `F` — pegar/guardar espada
 
 **Celular**
 - Joystick à esquerda — mover
