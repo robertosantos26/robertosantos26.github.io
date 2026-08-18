@@ -425,6 +425,49 @@ foamGeo.setAttribute('position', new THREE.BufferAttribute(foamPos,3));
 const foam = new THREE.Points(foamGeo, new THREE.PointsMaterial({color:0xffffff,size:0.5,transparent:true,opacity:.7}));
 scene.add(foam);
 
+let oceanModel = null;
+let oceanMixer = null;
+function carregarOceanoGLB(){
+  const loader = new GLTFLoader();
+  loader.load(
+    './animated_ocean_scene_tutorial_example_1.glb',
+    gltf=>{
+      oceanModel = gltf.scene;
+      oceanModel.position.set(0,-0.08,0);
+      oceanModel.scale.setScalar(1);
+      oceanModel.traverse(o=>{
+        if(o.isMesh){
+          o.receiveShadow = true;
+          if(o.material){
+            const mats = Array.isArray(o.material) ? o.material : [o.material];
+            mats.forEach(m=>{
+              m.transparent = true;
+              if(m.opacity===1) m.opacity = .94;
+              if('roughness' in m) m.roughness = Math.min(m.roughness ?? .28, .24);
+              if('metalness' in m) m.metalness = 0;
+            });
+          }
+        }
+      });
+      scene.add(oceanModel);
+      ocean.visible = false;
+      foam.visible = false;
+      if(gltf.animations && gltf.animations.length){
+        oceanMixer = new THREE.AnimationMixer(oceanModel);
+        gltf.animations.forEach(clip=>oceanMixer.clipAction(clip).play());
+      }
+      console.log('Oceano GLB carregado:', gltf.animations?.map(a=>a.name)||[]);
+    },
+    undefined,
+    error=>{
+      console.warn('O GLB do oceano não foi encontrado/carregado; usando oceano procedural como fallback.', error);
+      ocean.visible = true;
+      foam.visible = true;
+    }
+  );
+}
+carregarOceanoGLB();
+
 /* ------------------------------- ILHA ------------------------------- */
 const ISLAND_CENTER = new THREE.Vector3(0,0,40);
 const ISLAND_R = 42;
@@ -1109,6 +1152,8 @@ let pirateModel = null;
 let pirateMixer = null;
 let pirateActions = [];
 let currentPirateAction = null;
+let glbHandSwordNodes = [];
+let glbSheathedSwordFromModel = null;
 
 function prepararModeloPirata(root){
   root.traverse(o=>{
@@ -1151,8 +1196,24 @@ function carregarPersonagemGLB(){
       pirateModel.visible = true;
       player.add(pirateModel);
 
-      // Mantém o personagem antigo como fallback até o GLB carregar.
-      character.visible = false;
+      glbHandSwordNodes = [];
+      pirateModel.traverse(o=>{
+        if(/sword|espada/i.test(o.name)){
+          glbHandSwordNodes.push(o);
+          if(o.isMesh && !glbSheathedSwordFromModel){
+            glbSheathedSwordFromModel = o.clone();
+            glbSheathedSwordFromModel.position.set(-.48,1.02,.02);
+            glbSheathedSwordFromModel.rotation.set(0,0,Math.PI*.76);
+            glbSheathedSwordFromModel.scale.setScalar(.55);
+            player.add(glbSheathedSwordFromModel);
+          }
+        }
+      });
+
+      // O arquivo atual é posado e não tem esqueleto/animações; nesse caso usamos o rig procedural
+      // para braços/pernas, mas reaproveitamos a espada do GLB quando possível.
+      character.visible = !(gltf.animations && gltf.animations.length);
+      pirateModel.visible = !!(gltf.animations && gltf.animations.length);
 
       if(gltf.animations && gltf.animations.length){
         pirateMixer = new THREE.AnimationMixer(pirateModel);
@@ -1161,7 +1222,7 @@ function carregarPersonagemGLB(){
         if(idle) idle.play();
         console.log('Chinese Pirate GLB carregado. Animações:', gltf.animations.map(a=>a.name));
       }else{
-        console.log('Chinese Pirate GLB carregado sem animações.');
+        console.log('Chinese Pirate GLB carregado sem animações; usando rig procedural para movimento de braços e pernas.');
       }
     },
     xhr=>{
@@ -1201,11 +1262,13 @@ function toggleSword(){
 function animateSword(dt, walking, runKey){
   swordState.actionTime += dt;
   swordState.blend = lerp(swordState.blend, swordState.drawn ? 1 : 0, 1-Math.pow(0.0008,dt));
-  const usingGLB = !!pirateModel;
+  const usingGLB = !!(pirateModel && pirateModel.visible);
   handSword.visible = !usingGLB && swordState.blend > 0.04;
-  sheathedSword.visible = !usingGLB && swordState.blend < 0.96;
-  glbHandSword.visible = usingGLB && swordState.blend > 0.04;
-  glbSheathedSword.visible = usingGLB && swordState.blend < 0.96;
+  sheathedSword.visible = !usingGLB && !glbSheathedSwordFromModel && swordState.blend < 0.96;
+  glbHandSword.visible = false;
+  glbSheathedSword.visible = false;
+  glbHandSwordNodes.forEach(o=>{ o.visible = swordState.blend > 0.04; });
+  if(glbSheathedSwordFromModel) glbSheathedSwordFromModel.visible = swordState.blend < 0.96;
   handSword.scale.setScalar(clamp(swordState.blend,0.001,1));
   sheathedSword.scale.setScalar(clamp(1-swordState.blend,0.001,1));
   glbHandSword.scale.setScalar(clamp(swordState.blend,0.001,1));
@@ -1482,8 +1545,9 @@ function updatePlayer(dt){
   if(len>0.05){
     mx/=len; mz/=len;
     // mover relativo à câmera (yaw)
-    const forward = new THREE.Vector3(Math.sin(camState.yaw),0,Math.cos(camState.yaw));
-    const right = new THREE.Vector3(Math.sin(camState.yaw+Math.PI/2),0,Math.cos(camState.yaw+Math.PI/2));
+    // direção relativa à câmera: W anda para longe da câmera (para frente na tela)
+    const forward = new THREE.Vector3(-Math.sin(camState.yaw),0,-Math.cos(camState.yaw));
+    const right = new THREE.Vector3(forward.z,0,-forward.x);
     const dir = new THREE.Vector3()
       .addScaledVector(forward, -mz)
       .addScaledVector(right, mx);
@@ -1723,6 +1787,7 @@ function animate(){
   const elapsed = now/1000;
 
   if(pirateMixer) pirateMixer.update(dt);
+  if(oceanMixer) oceanMixer.update(dt);
 
   if(!state.gameEnded){
     updatePlayer(dt);
