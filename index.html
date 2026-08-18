@@ -181,14 +181,62 @@
   </div>
 </div>
 
-<script type="importmap">
-{ "imports": { "three": "https://unpkg.com/three@0.170.0/build/three.module.js", "three/addons/": "https://unpkg.com/three@0.170.0/examples/jsm/" } }
-</script>
 <script type="module">
-import * as THREE from 'three';
-import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+const loadingMsgEl = document.getElementById('loading-msg');
+const loadingFillEl = document.getElementById('loadbar-fill');
 
-// Materialos globais precisam ser criados somente depois que THREE foi inicializado.
+function showLoadError(message){
+  if(loadingFillEl) loadingFillEl.style.width = '100%';
+  if(loadingMsgEl){
+    loadingMsgEl.textContent = message;
+    loadingMsgEl.style.color = '#ffdf8a';
+    loadingMsgEl.style.maxWidth = 'min(520px, 86vw)';
+    loadingMsgEl.style.textAlign = 'center';
+    loadingMsgEl.style.lineHeight = '1.5';
+  }
+}
+
+async function importFromCDNs(path){
+  const cdnsByPath = {
+    'build/three.module.js': [
+      'https://esm.sh/three@0.170.0',
+      'https://cdn.jsdelivr.net/npm/three@0.170.0/+esm'
+    ],
+    'examples/jsm/loaders/GLTFLoader.js': [
+      'https://esm.sh/three@0.170.0/examples/jsm/loaders/GLTFLoader.js',
+      'https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/loaders/GLTFLoader.js/+esm'
+    ]
+  };
+  const cdns = cdnsByPath[path] || [`https://esm.sh/three@0.170.0/${path}`];
+
+  let lastError;
+  for(const url of cdns){
+    try{
+      return await import(url);
+    }catch(error){
+      lastError = error;
+      console.warn(`Falha ao carregar ${url}. Tentando próximo CDN...`, error);
+    }
+  }
+  throw lastError;
+}
+
+let THREE;
+let GLTFLoader;
+try{
+  const [threeModule, gltfModule] = await Promise.all([
+    importFromCDNs('build/three.module.js'),
+    importFromCDNs('examples/jsm/loaders/GLTFLoader.js')
+  ]);
+  THREE = threeModule;
+  GLTFLoader = gltfModule.GLTFLoader;
+}catch(error){
+  console.error('Não foi possível carregar as bibliotecas do jogo:', error);
+  showLoadError('Erro ao carregar as bibliotecas 3D. Verifique sua conexão e recarregue a página.');
+  throw error;
+}
+
+// Materiais globais precisam ser criados somente depois que THREE foi inicializado.
 const goldMat = new THREE.MeshStandardMaterial({color:0xd0a72e, metalness:.72, roughness:.28});
 
 /* =========================================================================
@@ -262,7 +310,14 @@ function giveMap(){
 
 /* ============================== THREE SETUP ============================== */
 const canvas = document.getElementById('game-canvas');
-const renderer = new THREE.WebGLRenderer({canvas, antialias:true, powerPreference:'high-performance'});
+let renderer;
+try{
+  renderer = new THREE.WebGLRenderer({canvas, antialias:true, powerPreference:'high-performance'});
+}catch(error){
+  console.error('Não foi possível iniciar o WebGL:', error);
+  showLoadError('Erro ao iniciar o WebGL. Atualize o navegador ou habilite aceleração gráfica para abrir o jogo.');
+  throw error;
+}
 renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.shadowMap.enabled = true;
@@ -283,14 +338,19 @@ window.addEventListener('resize', ()=>{
 
 /* ------------------------------- CÉU ------------------------------- */
 function makeSkyTexture(){
-  const c=document.createElement('canvas'); c.width=2; c.height=256;
+  const c=document.createElement('canvas'); c.width=2; c.height=512;
   const ctx=c.getContext('2d');
-  const g=ctx.createLinearGradient(0,0,0,256);
-  g.addColorStop(0,'#1c6fa8');
-  g.addColorStop(0.45,'#5fb3d9');
-  g.addColorStop(0.75,'#bfe6ee');
-  g.addColorStop(1,'#eaf6ee');
-  ctx.fillStyle=g; ctx.fillRect(0,0,2,256);
+  const g=ctx.createLinearGradient(0,0,0,512);
+  g.addColorStop(0,'#082f63');
+  g.addColorStop(0.28,'#1d78ba');
+  g.addColorStop(0.58,'#7ec7e5');
+  g.addColorStop(0.82,'#d8f1f0');
+  g.addColorStop(1,'#fff1d3');
+  ctx.fillStyle=g; ctx.fillRect(0,0,2,512);
+  const haze=ctx.createLinearGradient(0,280,0,512);
+  haze.addColorStop(0,'rgba(255,255,255,0)');
+  haze.addColorStop(1,'rgba(255,219,170,.35)');
+  ctx.fillStyle=haze; ctx.fillRect(0,0,2,512);
   const tex=new THREE.CanvasTexture(c);
   tex.colorSpace=THREE.SRGBColorSpace;
   return tex;
@@ -322,7 +382,7 @@ const ambient = new THREE.AmbientLight(0xffffff,0.25);
 scene.add(ambient);
 
 // Nuvens (planos simples reaproveitados)
-const cloudMat = new THREE.MeshBasicMaterial({color:0xffffff, transparent:true, opacity:.85, depthWrite:false});
+const cloudMat = new THREE.MeshStandardMaterial({color:0xffffff, roughness:.9, transparent:true, opacity:.82, depthWrite:false});
 function makeCloud(x,y,z,s){
   const g = new THREE.Group();
   const puffGeo = new THREE.SphereGeometry(1,7,7);
@@ -348,7 +408,7 @@ const OCEAN_SIZE = 700, OCEAN_SEG=90;
 const oceanGeo = new THREE.PlaneGeometry(OCEAN_SIZE,OCEAN_SIZE,OCEAN_SEG,OCEAN_SEG);
 oceanGeo.rotateX(-Math.PI/2);
 const oceanBasePos = oceanGeo.attributes.position.array.slice();
-const oceanMat = new THREE.MeshStandardMaterial({color:0x1c6f8f, roughness:0.35, metalness:0.05, transparent:true, opacity:0.92});
+const oceanMat = new THREE.MeshPhysicalMaterial({color:0x126886, roughness:0.18, metalness:0.0, transmission:0.08, thickness:0.9, transparent:true, opacity:0.88, clearcoat:0.55, clearcoatRoughness:0.18});
 const ocean = new THREE.Mesh(oceanGeo, oceanMat);
 ocean.receiveShadow = true;
 scene.add(ocean);
@@ -364,6 +424,49 @@ for(let i=0;i<FOAM_N;i++){
 foamGeo.setAttribute('position', new THREE.BufferAttribute(foamPos,3));
 const foam = new THREE.Points(foamGeo, new THREE.PointsMaterial({color:0xffffff,size:0.5,transparent:true,opacity:.7}));
 scene.add(foam);
+
+let oceanModel = null;
+let oceanMixer = null;
+function carregarOceanoGLB(){
+  const loader = new GLTFLoader();
+  loader.load(
+    './animated_ocean_scene_tutorial_example_1.glb',
+    gltf=>{
+      oceanModel = gltf.scene;
+      oceanModel.position.set(0,-0.08,0);
+      oceanModel.scale.setScalar(1);
+      oceanModel.traverse(o=>{
+        if(o.isMesh){
+          o.receiveShadow = true;
+          if(o.material){
+            const mats = Array.isArray(o.material) ? o.material : [o.material];
+            mats.forEach(m=>{
+              m.transparent = true;
+              if(m.opacity===1) m.opacity = .94;
+              if('roughness' in m) m.roughness = Math.min(m.roughness ?? .28, .24);
+              if('metalness' in m) m.metalness = 0;
+            });
+          }
+        }
+      });
+      scene.add(oceanModel);
+      ocean.visible = false;
+      foam.visible = false;
+      if(gltf.animations && gltf.animations.length){
+        oceanMixer = new THREE.AnimationMixer(oceanModel);
+        gltf.animations.forEach(clip=>oceanMixer.clipAction(clip).play());
+      }
+      console.log('Oceano GLB carregado:', gltf.animations?.map(a=>a.name)||[]);
+    },
+    undefined,
+    error=>{
+      console.warn('O GLB do oceano não foi encontrado/carregado; usando oceano procedural como fallback.', error);
+      ocean.visible = true;
+      foam.visible = true;
+    }
+  );
+}
+carregarOceanoGLB();
 
 /* ------------------------------- ILHA ------------------------------- */
 const ISLAND_CENTER = new THREE.Vector3(0,0,40);
@@ -471,6 +574,7 @@ function makeRock(scale=1){
 }
 
 const propColliders = []; // {x,z,r} — colisão cilíndrica simples
+const boxColliders = []; // {x,z,hw,hd} — colisão retangular alinhada ao mundo
 
 function placeOnIsland(obj, minR=0, maxR=ISLAND_R*0.85, avoidCenter=null, avoidR=6){
   let tries=0, x,z,h;
@@ -675,6 +779,7 @@ barrelSpots.forEach(([x,z])=>{
   b.userData.onInteract = ()=>pushProp(b);
   shipGroup.add(b);
   shipProps.push(b);
+  propColliders.push({x:SHIP_POS.x+x, z:SHIP_POS.z+z, r:.72, obj:b});
 });
 const crateSpots = [[2.6,-2],[2.9,-1],[-3,1.5]];
 crateSpots.forEach(([x,z])=>{
@@ -687,6 +792,7 @@ crateSpots.forEach(([x,z])=>{
   c.userData.onInteract = ()=>pushProp(c);
   shipGroup.add(c);
   shipProps.push(c);
+  boxColliders.push({x:SHIP_POS.x+x, z:SHIP_POS.z+z, hw:.62, hd:.62, obj:c});
 });
 function pushProp(mesh){
   const dir = new THREE.Vector3().subVectors(mesh.position, new THREE.Vector3(player.position.x-SHIP_POS.x, mesh.position.y, player.position.z-SHIP_POS.z));
@@ -730,6 +836,7 @@ chestGroup.userData.onInteract = ()=>{
   }
 };
 shipGroup.add(chestGroup);
+boxColliders.push({x:SHIP_POS.x+chestGroup.position.x, z:SHIP_POS.z+chestGroup.position.z, hw:.75, hd:.52, obj:chestGroup});
 
 // lanternas (com estado ligado/desligado)
 const lanternPositions = [[-3.4,SHIP_DECK_Y+1.4,-5.5],[3.4,SHIP_DECK_Y+1.4,5.5],[-2.9,SHIP_DECK_Y+1.9,2]];
@@ -811,16 +918,19 @@ tableGroup.userData.onInteract = ()=>{
   openMapOverlay();
 };
 cabinGroup.add(tableGroup);
+boxColliders.push({x:SHIP_POS.x+cabinGroup.position.x+tableGroup.position.x, z:SHIP_POS.z+cabinGroup.position.z+tableGroup.position.z, hw:.85, hd:.55, obj:tableGroup});
 
 const chair = new THREE.Mesh(new THREE.BoxGeometry(0.5,0.5,0.5), darkWoodMat);
 chair.position.set(0.9,0.25,-0.9);
 chair.castShadow=true;
 cabinGroup.add(chair);
+boxColliders.push({x:SHIP_POS.x+cabinGroup.position.x+chair.position.x, z:SHIP_POS.z+cabinGroup.position.z+chair.position.z, hw:.38, hd:.38, obj:chair});
 
 const bed = new THREE.Mesh(new THREE.BoxGeometry(1.6,0.3,0.8), new THREE.MeshStandardMaterial({color:0x8f3a2e}));
 bed.position.set(-0.9,0.15,0.9);
 bed.castShadow=true; bed.receiveShadow=true;
 cabinGroup.add(bed);
+boxColliders.push({x:SHIP_POS.x+cabinGroup.position.x+bed.position.x, z:SHIP_POS.z+cabinGroup.position.z+bed.position.z, hw:.95, hd:.55, obj:bed});
 
 /* pequena rampa/escada de acesso ao convés vindo da popa (decorativa) */
 const smallStair = new THREE.Mesh(new THREE.BoxGeometry(1,0.15,1.4), darkWoodMat);
@@ -997,6 +1107,30 @@ const foreL=detailMesh(foreGeo,skinMat,new THREE.Vector3(0,-.67,0)); leftArm.add
 const handGeo=new THREE.SphereGeometry(.105,14,12);
 leftArm.add(detailMesh(handGeo,skinMat,new THREE.Vector3(0,-.88,0))); rightArm.add(detailMesh(handGeo,skinMat,new THREE.Vector3(0,-.88,0)));
 
+/* espada: pode ficar guardada na bainha ou na mão direita */
+const swordMat = new THREE.MeshStandardMaterial({color:0xd6e5ee, metalness:.82, roughness:.18});
+const swordGripMat = new THREE.MeshStandardMaterial({color:0x3a2315, roughness:.64});
+const swordGoldMat = new THREE.MeshStandardMaterial({color:0xd0a72e, metalness:.75, roughness:.28});
+function makeSword(){
+  const g=new THREE.Group();
+  const blade=new THREE.Mesh(new THREE.BoxGeometry(.055,.9,.025),swordMat); blade.position.y=.48; g.add(blade);
+  const tip=new THREE.Mesh(new THREE.ConeGeometry(.045,.16,4),swordMat); tip.position.y=.99; tip.rotation.y=Math.PI*.25; g.add(tip);
+  const guard=new THREE.Mesh(new THREE.BoxGeometry(.42,.055,.055),swordGoldMat); guard.position.y=.03; g.add(guard);
+  const grip=new THREE.Mesh(new THREE.CylinderGeometry(.045,.045,.28,10),swordGripMat); grip.position.y=-.14; g.add(grip);
+  const pommel=new THREE.Mesh(new THREE.SphereGeometry(.065,10,10),swordGoldMat); pommel.position.y=-.31; g.add(pommel);
+  g.traverse(o=>{if(o.isMesh){o.castShadow=true;o.receiveShadow=true;}});
+  return g;
+}
+const handSword = makeSword();
+handSword.position.set(.02,-.93,.08); handSword.rotation.set(Math.PI*.08,0,-Math.PI*.04); rightArm.add(handSword);
+const sheathedSword = makeSword();
+sheathedSword.position.set(-.42,1.16,.02); sheathedSword.rotation.set(0,0,Math.PI*.78); character.add(sheathedSword);
+const glbHandSword = makeSword();
+glbHandSword.position.set(.42,1.35,.46); glbHandSword.rotation.set(-Math.PI*.18,0,-Math.PI*.08); player.add(glbHandSword);
+const glbSheathedSword = makeSword();
+glbSheathedSword.position.set(-.48,1.02,.02); glbSheathedSword.rotation.set(0,0,Math.PI*.76); player.add(glbSheathedSword);
+const swordState = {drawn:false, blend:0, actionTime:0};
+
 /* chapéu pirata detalhado */
 const hatGroup=new THREE.Group(); hatGroup.position.y=.36; headGroup.add(hatGroup);
 const brim=detailMesh(new THREE.CylinderGeometry(.45,.45,.06,24),hatMat,new THREE.Vector3(0,0,0),new THREE.Vector3(1,.9,.82)); hatGroup.add(brim);
@@ -1017,6 +1151,9 @@ const playerState={velocityY:0,onGround:true,speed:0,yaw:0,run:false,walkTime:0}
 let pirateModel = null;
 let pirateMixer = null;
 let pirateActions = [];
+let currentPirateAction = null;
+let glbHandSwordNodes = [];
+let glbSheathedSwordFromModel = null;
 
 function prepararModeloPirata(root){
   root.traverse(o=>{
@@ -1059,8 +1196,24 @@ function carregarPersonagemGLB(){
       pirateModel.visible = true;
       player.add(pirateModel);
 
-      // Mantém o personagem antigo como fallback até o GLB carregar.
-      character.visible = false;
+      glbHandSwordNodes = [];
+      pirateModel.traverse(o=>{
+        if(/sword|espada/i.test(o.name)){
+          glbHandSwordNodes.push(o);
+          if(o.isMesh && !glbSheathedSwordFromModel){
+            glbSheathedSwordFromModel = o.clone();
+            glbSheathedSwordFromModel.position.set(-.48,1.02,.02);
+            glbSheathedSwordFromModel.rotation.set(0,0,Math.PI*.76);
+            glbSheathedSwordFromModel.scale.setScalar(.55);
+            player.add(glbSheathedSwordFromModel);
+          }
+        }
+      });
+
+      // O arquivo atual é posado e não tem esqueleto/animações; nesse caso usamos o rig procedural
+      // para braços/pernas, mas reaproveitamos a espada do GLB quando possível.
+      character.visible = !(gltf.animations && gltf.animations.length);
+      pirateModel.visible = !!(gltf.animations && gltf.animations.length);
 
       if(gltf.animations && gltf.animations.length){
         pirateMixer = new THREE.AnimationMixer(pirateModel);
@@ -1069,7 +1222,7 @@ function carregarPersonagemGLB(){
         if(idle) idle.play();
         console.log('Chinese Pirate GLB carregado. Animações:', gltf.animations.map(a=>a.name));
       }else{
-        console.log('Chinese Pirate GLB carregado sem animações.');
+        console.log('Chinese Pirate GLB carregado sem animações; usando rig procedural para movimento de braços e pernas.');
       }
     },
     xhr=>{
@@ -1091,6 +1244,53 @@ function carregarPersonagemGLB(){
 
 carregarPersonagemGLB();
 
+function setPirateAction(nameHint, fallbackIndex=0){
+  if(!pirateActions.length) return;
+  const next = pirateActions.find(a=>new RegExp(nameHint,'i').test(a.getClip().name)) || pirateActions[fallbackIndex] || pirateActions[0];
+  if(!next || next===currentPirateAction) return;
+  next.reset().fadeIn(.22).play();
+  if(currentPirateAction) currentPirateAction.fadeOut(.22);
+  currentPirateAction = next;
+}
+
+function toggleSword(){
+  swordState.drawn = !swordState.drawn;
+  swordState.actionTime = 0;
+  toast(swordState.drawn ? 'Espada em punho!' : 'Espada guardada na bainha.', 1200);
+}
+
+function animateSword(dt, walking, runKey){
+  swordState.actionTime += dt;
+  swordState.blend = lerp(swordState.blend, swordState.drawn ? 1 : 0, 1-Math.pow(0.0008,dt));
+  const usingGLB = !!(pirateModel && pirateModel.visible);
+  handSword.visible = !usingGLB && swordState.blend > 0.04;
+  sheathedSword.visible = !usingGLB && !glbSheathedSwordFromModel && swordState.blend < 0.96;
+  glbHandSword.visible = false;
+  glbSheathedSword.visible = false;
+  glbHandSwordNodes.forEach(o=>{ o.visible = swordState.blend > 0.04; });
+  if(glbSheathedSwordFromModel) glbSheathedSwordFromModel.visible = swordState.blend < 0.96;
+  handSword.scale.setScalar(clamp(swordState.blend,0.001,1));
+  sheathedSword.scale.setScalar(clamp(1-swordState.blend,0.001,1));
+  glbHandSword.scale.setScalar(clamp(swordState.blend,0.001,1));
+  glbSheathedSword.scale.setScalar(clamp(1-swordState.blend,0.001,1));
+
+  if(swordState.drawn){
+    const guardPose = Math.sin(performance.now()*0.006)*0.05;
+    rightArm.rotation.x = lerp(rightArm.rotation.x, -0.62 + guardPose, dt*7);
+    rightArm.rotation.z = lerp(rightArm.rotation.z, -0.18, dt*7);
+    leftArm.rotation.z = lerp(leftArm.rotation.z, 0.10, dt*5);
+  }else{
+    rightArm.rotation.z = lerp(rightArm.rotation.z, 0, dt*7);
+    leftArm.rotation.z = lerp(leftArm.rotation.z, 0, dt*7);
+  }
+
+  if(walking && swordState.drawn){
+    const bob = Math.sin(playerState.walkTime*2)*(runKey?.06:.035);
+    handSword.rotation.x = Math.PI*.08 + bob;
+    glbHandSword.rotation.x = -Math.PI*.18 + bob;
+  }
+  setPirateAction(walking ? (runKey?'run|sprint':'walk') : 'idle|stand|breath', walking ? 1 : 0);
+}
 
 /* ------------------------- Câmera terceira pessoa ------------------------- */
 const camState = { yaw:Math.PI, pitch:0.32, dist:6.4 };
@@ -1113,6 +1313,7 @@ const keys = {};
 window.addEventListener('keydown', e=>{
   keys[e.code]=true;
   if(e.code==='KeyE') tryInteract();
+  if(e.code==='KeyF') toggleSword();
 });
 window.addEventListener('keyup', e=>{ keys[e.code]=false; });
 
@@ -1329,6 +1530,7 @@ function computeGroundHeight(worldX, worldZ){
 }
 
 function updatePlayer(dt){
+  const previousPos = player.position.clone();
   const speedWalk=4.2, speedRun=8;
   let mx=0, mz=0;
   if(keys['KeyW']||keys['ArrowUp']) mz-=1;
@@ -1343,8 +1545,9 @@ function updatePlayer(dt){
   if(len>0.05){
     mx/=len; mz/=len;
     // mover relativo à câmera (yaw)
-    const forward = new THREE.Vector3(Math.sin(camState.yaw),0,Math.cos(camState.yaw));
-    const right = new THREE.Vector3(Math.sin(camState.yaw+Math.PI/2),0,Math.cos(camState.yaw+Math.PI/2));
+    // direção relativa à câmera: W anda para longe da câmera (para frente na tela)
+    const forward = new THREE.Vector3(-Math.sin(camState.yaw),0,-Math.cos(camState.yaw));
+    const right = new THREE.Vector3(forward.z,0,-forward.x);
     const dir = new THREE.Vector3()
       .addScaledVector(forward, -mz)
       .addScaledVector(right, mx);
@@ -1363,9 +1566,12 @@ function updatePlayer(dt){
   }
   player.rotation.y = playerState.yaw;
 
-  /* COLISÕES ROBUSTAS: objetos, mastros, canhões e bordas do navio */
-  for(const c of propColliders){
-    if(c.r<=0) continue;
+  /* COLISÕES ROBUSTAS: objetos, mastros, canhões, móveis e bordas do navio */
+  function resolveCircleCollider(c){
+    if(c.obj){
+      const wp = new THREE.Vector3(); c.obj.getWorldPosition(wp); c.x=wp.x; c.z=wp.z;
+    }
+    if(c.r<=0) return;
     const dx=player.position.x-c.x, dz=player.position.z-c.z;
     const d=Math.hypot(dx,dz), minD=c.r+.46;
     if(d<minD){
@@ -1373,6 +1579,20 @@ function updatePlayer(dt){
       else player.position.x+=minD;
     }
   }
+  function resolveBoxCollider(b){
+    if(b.obj){
+      const wp = new THREE.Vector3(); b.obj.getWorldPosition(wp); b.x=wp.x; b.z=wp.z;
+    }
+    const px=player.position.x-b.x, pz=player.position.z-b.z;
+    const hw=b.hw+.42, hd=b.hd+.42;
+    if(Math.abs(px)<hw && Math.abs(pz)<hd){
+      const ox=hw-Math.abs(px), oz=hd-Math.abs(pz);
+      if(ox<oz) player.position.x=b.x+Math.sign(px||previousPos.x-b.x||1)*hw;
+      else player.position.z=b.z+Math.sign(pz||previousPos.z-b.z||1)*hd;
+    }
+  }
+  propColliders.forEach(resolveCircleCollider);
+  boxColliders.forEach(resolveBoxCollider);
   const sx=player.position.x-SHIP_POS.x, sz=player.position.z-SHIP_POS.z;
   if(Math.abs(sx)<deckW/2+.2 && Math.abs(sz)<deckL/2+.2){
     const margin=.48;
@@ -1380,18 +1600,24 @@ function updatePlayer(dt){
     if(Math.abs(sz)>deckL/2-margin) player.position.z=SHIP_POS.z+Math.sign(sz)*(deckL/2-margin);
   }
 
-  // colisão com paredes da cabine (bounding box simples)
+  // colisão com paredes da cabine: bloqueia paredes, mas permite circular pelo interior quando a porta está aberta
   {
     const cx = SHIP_POS.x-2.4, cz = SHIP_POS.z-4.6;
     const hw = cabinW/2+0.35, hd = cabinD/2+0.35;
+    const wallMargin = .48;
     const dx = player.position.x-cx, dz=player.position.z-cz;
-    const insideDoorGap = cabinDoorOpen && Math.abs(dx)<cabinW*0.30; // vão da porta na frente (+Z)
-    if(Math.abs(dx)<hw && Math.abs(dz)<hd && !(insideDoorGap)){
-      // empurra para fora pela face mais próxima
-      const overlapX = hw-Math.abs(dx);
-      const overlapZ = hd-Math.abs(dz);
-      if(overlapX<overlapZ) player.position.x = cx+Math.sign(dx||1)*hw;
-      else player.position.z = cz+Math.sign(dz||1)*hd;
+    const inCabinEnvelope = Math.abs(dx)<hw && Math.abs(dz)<hd;
+    if(inCabinEnvelope){
+      const inDoorGap = cabinDoorOpen && Math.abs(dx)<cabinW*0.30 && dz>hd-wallMargin;
+      if(Math.abs(dx)>hw-wallMargin){
+        player.position.x = cx+Math.sign(dx||previousPos.x-cx||1)*(hw-wallMargin);
+      }
+      if(dz<-hd+wallMargin){
+        player.position.z = cz-hd+wallMargin;
+      }
+      if(dz>hd-wallMargin && !inDoorGap){
+        player.position.z = cz+hd-wallMargin;
+      }
     }
   }
 
@@ -1423,29 +1649,27 @@ function updatePlayer(dt){
     if(player.position.y<-1.6){ toast('A correnteza te empurra de volta ao navio...',1800); player.position.set(SHIP_POS.x,SHIP_DECK_Y+2,SHIP_POS.z); playerState.velocityY=0; }
   }
 
-  // animação simples de caminhada
+  // animação do pirata: caminhar/correr, braços, pernas e espada
   const walking = moved && playerState.onGround;
-  const t = performance.now()*0.012;
-  const swing = walking ? Math.sin(t* (runKey?1.8:1) )*0.5 : 0;
-  legL.rotation.x = swing; legR.rotation.x = -swing;
-  armL.rotation.x = -swing*0.8; armR.rotation.x = swing*0.8;
   if(walking){
     footstepAccum += dt;
     const interval = runKey?0.28:0.42;
     if(footstepAccum>interval){ footstepAccum=0; footstepBlip(); }
+    playerState.walkTime += dt*(runKey?11.5:7.5);
+  }else{
+    playerState.walkTime += dt*2.2;
   }
-
-  if(!walking){
-    character.position.y=lerp(character.position.y,Math.sin(performance.now()*.0018)*.012,dt*4);
-    headGroup.rotation.z=lerp(headGroup.rotation.z,0,dt*6);
-  } else {
-    playerState.walkTime += dt*(runKey?10.5:7.0);
-    const swing=Math.sin(playerState.walkTime)*(runKey?.62:.42);
-    leftLeg.rotation.x=swing; rightLeg.rotation.x=-swing;
-    leftArm.rotation.x=-swing*.72; rightArm.rotation.x=swing*.72;
-    character.rotation.z=Math.sin(playerState.walkTime*2)*.022;
-    character.position.y=Math.abs(Math.sin(playerState.walkTime))*(runKey?.045:.025);
-  }
+  const stride = Math.sin(playerState.walkTime);
+  const stride2 = Math.sin(playerState.walkTime*2);
+  const amp = walking ? (runKey?.66:.44) : .035;
+  leftLeg.rotation.x=lerp(leftLeg.rotation.x, stride*amp, dt*12);
+  rightLeg.rotation.x=lerp(rightLeg.rotation.x, -stride*amp, dt*12);
+  leftArm.rotation.x=lerp(leftArm.rotation.x, swordState.drawn ? -stride*.18 : -stride*amp*.72, dt*10);
+  rightArm.rotation.x=lerp(rightArm.rotation.x, swordState.drawn ? -.62 : stride*amp*.72, dt*10);
+  headGroup.rotation.z=lerp(headGroup.rotation.z, walking?Math.sin(playerState.walkTime*.5)*.035:0,dt*6);
+  character.rotation.z=lerp(character.rotation.z, walking?stride2*.025:0,dt*8);
+  character.position.y=lerp(character.position.y, walking?Math.abs(stride)*(runKey?.055:.032):Math.sin(performance.now()*.0018)*.012,dt*8);
+  animateSword(dt, walking, runKey);
 
   // zonas / missão
   const inShipBounds = Math.abs(player.position.x-SHIP_POS.x)<deckW/2 && Math.abs(player.position.z-SHIP_POS.z)<deckL/2+1;
@@ -1507,13 +1731,17 @@ function animateEnvironment(dt, elapsed){
   const pos = oceanGeo.attributes.position;
   for(let i=0;i<pos.count;i++){
     const bx = oceanBasePos[i*3], bz = oceanBasePos[i*3+2];
-    const wave = Math.sin((bx*0.06)+elapsed*1.1)*0.35 + Math.cos((bz*0.05)+elapsed*0.8)*0.3;
-    pos.setY(i, wave);
+    const swell = Math.sin((bx*0.025)+(bz*0.012)+elapsed*.75)*0.48;
+    const chop = Math.sin((bx*0.12)-elapsed*1.9)*0.13 + Math.cos((bz*0.10)+elapsed*1.45)*0.16;
+    const ripple = Math.sin((bx+bz)*0.18+elapsed*2.7)*0.055;
+    pos.setY(i, swell+chop+ripple);
   }
   pos.needsUpdate=true;
   oceanGeo.computeVertexNormals();
 
-  foam.rotation.y += dt*0.02;
+  foam.rotation.y += dt*0.028;
+  foam.material.opacity = 0.55 + Math.sin(elapsed*1.7)*0.12;
+  oceanMat.color.setHSL(0.54, 0.72, 0.27 + Math.sin(elapsed*.18)*0.025);
 
   // nuvens
   clouds.forEach(c=>{ c.position.x += c.userData.speed*dt*1.2; if(c.position.x>320) c.position.x=-320; });
@@ -1559,6 +1787,7 @@ function animate(){
   const elapsed = now/1000;
 
   if(pirateMixer) pirateMixer.update(dt);
+  if(oceanMixer) oceanMixer.update(dt);
 
   if(!state.gameEnded){
     updatePlayer(dt);
@@ -1574,8 +1803,8 @@ function animate(){
 /* ---------------------------- Loading fake-progress ---------------------------- */
 const loadMsgs = ['Içando as velas...','Desenrolando o mapa...','Acendendo as lanternas...','Ajustando o leme...','Pronto para zarpar!'];
 let li=0;
-const fill = document.getElementById('loadbar-fill');
-const msgEl = document.getElementById('loading-msg');
+const fill = loadingFillEl;
+const msgEl = loadingMsgEl;
 let prog=0;
 const loadTimer = setInterval(()=>{
   prog += rand(8,18);
