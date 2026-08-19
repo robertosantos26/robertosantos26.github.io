@@ -343,6 +343,27 @@ const SHIP_WORLD_L = 15.5 * SHIP_SCALE;
 const ISLAND_CENTER = new THREE.Vector3(0,0,40);
 const ISLAND_R = 42;
 
+  // Dimensões REAIS do navio no mundo depois do scale 1.55
+const SHIP_COLLISION = {
+  halfW: (8.4 * SHIP_SCALE) / 2,
+  halfL: (15.5 * SHIP_SCALE) / 2,
+
+  // margem para o personagem não ficar grudado na borda
+  margin: 0.48 * SHIP_SCALE,
+
+  // abertura frontal para acessar a prancha
+  frontExitWidth: 1.05 * SHIP_SCALE,
+  frontExitDepth: 1.35 * SHIP_SCALE
+};
+
+function shipWorldPoint(localX, localZ, localY=0){
+  return new THREE.Vector3(
+    SHIP_POS.x + localX * SHIP_SCALE,
+    SHIP_POS.y + localY * SHIP_SCALE,
+    SHIP_POS.z + localZ * SHIP_SCALE
+  );
+}
+
 /* ------------------------------- OCEANO ------------------------------- */
 const OCEAN_SIZE = 700, OCEAN_SEG=150;
 const oceanGeo = new THREE.PlaneGeometry(OCEAN_SIZE,OCEAN_SIZE,OCEAN_SEG,OCEAN_SEG);
@@ -606,8 +627,15 @@ const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.2,0.26,9,10), darkWoodM
 mast.position.set(0, SHIP_DECK_LOCAL+4.5, -1);
 mast.castShadow=true;
 shipGroup.add(mast);
-propColliders.push({x:SHIP_POS.x, z:SHIP_POS.z-1, r:0.4});
+{
+  const mastWorld = shipWorldPoint(0,-1);
 
+  propColliders.push({
+    x:mastWorld.x,
+    z:mastWorld.z,
+    r:0.42 * SHIP_SCALE
+  });
+}
 const yard = new THREE.Mesh(new THREE.CylinderGeometry(0.08,0.08,6,8), darkWoodMat);
 yard.rotation.z=Math.PI/2;
 yard.position.set(0,SHIP_DECK_LOCAL+7.6,-1);
@@ -649,13 +677,141 @@ shipGroup.add(helmGroup);
 const barrelMat = new THREE.MeshStandardMaterial({color:0x7a5230, roughness:.9});
 const crateMat = new THREE.MeshStandardMaterial({color:0x9c7143, roughness:.85});
 function makeBarrel(){
-  const g = new THREE.Mesh(new THREE.CylinderGeometry(0.5,0.5,0.9,14), barrelMat);
-  g.castShadow=true; g.receiveShadow=true;
+
+  const g = new THREE.Group();
+
+  // Corpo principal
+  const body = new THREE.Mesh(
+    new THREE.CylinderGeometry(
+      0.42,
+      0.47,
+      0.92,
+      18,
+      6
+    ),
+    barrelMat
+  );
+
+  body.castShadow = true;
+  body.receiveShadow = true;
+  g.add(body);
+
+  // Aros metálicos
+  const hoopMat = new THREE.MeshStandardMaterial({
+    color:0x3b332a,
+    metalness:.72,
+    roughness:.4
+  });
+
+  const hoopGeo = new THREE.TorusGeometry(
+    .445,
+    .035,
+    8,
+    20
+  );
+
+  [-.30, .30].forEach(y=>{
+    const hoop = new THREE.Mesh(
+      hoopGeo,
+      hoopMat
+    );
+
+    hoop.rotation.x = Math.PI / 2;
+    hoop.position.y = y;
+
+    hoop.castShadow = true;
+
+    g.add(hoop);
+  });
+
+  // Tampa
+  const lid = new THREE.Mesh(
+    new THREE.CylinderGeometry(
+      .40,
+      .40,
+      .035,
+      18
+    ),
+    deckMat
+  );
+
+  lid.rotation.x = Math.PI / 2;
+  lid.position.y = .47;
+
+  lid.castShadow = true;
+  g.add(lid);
+
   return g;
 }
 function makeCrate(){
-  const g = new THREE.Mesh(new THREE.BoxGeometry(0.9,0.9,0.9), crateMat);
-  g.castShadow=true; g.receiveShadow=true;
+
+  const g = new THREE.Group();
+
+  const base = new THREE.Mesh(
+    new THREE.BoxGeometry(.88,.78,.88),
+    crateMat
+  );
+
+  base.position.y = .39;
+  base.castShadow = true;
+  base.receiveShadow = true;
+
+  g.add(base);
+
+  const woodDark = new THREE.MeshStandardMaterial({
+    color:0x5a391e,
+    roughness:.9
+  });
+
+  // Travessas frontais
+  for(const x of [-.31,.31]){
+
+    const plank = new THREE.Mesh(
+      new THREE.BoxGeometry(.09,.82,.06),
+      woodDark
+    );
+
+    plank.position.set(
+      x,
+      .39,
+      .445
+    );
+
+    plank.castShadow = true;
+
+    g.add(plank);
+  }
+
+  // Travessas laterais
+  for(const z of [-.31,.31]){
+
+    const plank = new THREE.Mesh(
+      new THREE.BoxGeometry(.06,.82,.09),
+      woodDark
+    );
+
+    plank.position.set(
+      .445,
+      .39,
+      z
+    );
+
+    plank.castShadow = true;
+
+    g.add(plank);
+  }
+
+  // Tampa
+  const top = new THREE.Mesh(
+    new THREE.BoxGeometry(.90,.055,.90),
+    deckPlankMatA
+  );
+
+  top.position.y = .80;
+  top.castShadow = true;
+
+  g.add(top);
+
   return g;
 }
 const shipProps = [];
@@ -752,13 +908,7 @@ lanternPositions.forEach(([x,y,z])=>{
   lanterns.push(g);
 });
 
-for(let i=0;i<4;i++){
-  const rope = new THREE.Mesh(new THREE.CylinderGeometry(0.03,0.03,4,6), ropeMat);
-  const side = i%2===0?1:-1;
-  rope.position.set(side*deckW*0.42, SHIP_DECK_LOCAL+3+ i*0.4, -1+ i*0.3);
-  rope.rotation.z = side*0.9;
-  shipGroup.add(rope);
-}
+
 
 const cabinGroup = new THREE.Group();
 const cabinW=4.8, cabinD=5.8, cabinH=3.35;
@@ -896,8 +1046,33 @@ function makeCannon(){
   for(const x of [-.24,.24]){const w=new THREE.Mesh(wheelG,wood);w.rotation.y=Math.PI/2;w.position.set(x,-.18,0);g.add(w);}
   g.traverse(o=>{if(o.isMesh){o.castShadow=true;o.receiveShadow=true;}}); g.userData.collisionRadius=.48; return g;
 }
-[[-3.72,-.8],[3.72,-.8],[-3.72,1.5],[3.72,1.5]].forEach(([x,z])=>{const c=makeCannon();c.position.set(x,SHIP_DECK_LOCAL+.42,z);c.rotation.y=x>0?Math.PI:0;shipGroup.add(c);propColliders.push({x:SHIP_POS.x+x,z:SHIP_POS.z+z,r:.52});});
+[
+  [-3.72,-.8],
+  [ 3.72,-.8],
+  [-3.72, 1.5],
+  [ 3.72, 1.5]
+].forEach(([x,z])=>{
 
+  const c = makeCannon();
+
+  c.position.set(
+    x,
+    SHIP_DECK_LOCAL + .42,
+    z
+  );
+
+  c.rotation.y = x > 0 ? Math.PI : 0;
+
+  shipGroup.add(c);
+
+  const worldPos = shipWorldPoint(x,z);
+
+  propColliders.push({
+    x: worldPos.x,
+    z: worldPos.z,
+    r: .52 * SHIP_SCALE
+  });
+});
 const anchor=new THREE.Group();
 const anchorRing=new THREE.Mesh(new THREE.TorusGeometry(.22,.055,8,18),metalMat); anchorRing.position.y=.75; anchor.add(anchorRing);
 const anchorStem=new THREE.Mesh(new THREE.CylinderGeometry(.055,.07,1.25,8),metalMat); anchorStem.position.y=.15; anchor.add(anchorStem);
@@ -919,106 +1094,972 @@ cabinDoor.userData.interactable=true;cabinDoor.userData.promptText='Abrir porta 
 lanterns.forEach(g=>g.scale.setScalar(1.15));
 
 /* =========================== JOGADOR — MODELO HUMANO REALISTA =========================== */
+/* =========================== JOGADOR — MODELO HUMANO =========================== */
+
 const player = new THREE.Group();
 const character = new THREE.Group();
-character.scale.setScalar(0.82);
+
 player.add(character);
 
-const skinMat = new THREE.MeshStandardMaterial({color:0xb8734f, roughness:.72});
-const skinDarkMat = new THREE.MeshStandardMaterial({color:0x8f5139, roughness:.8});
-const shirtMat = new THREE.MeshStandardMaterial({color:0x31516a, roughness:.78});
-const shirtDarkMat = new THREE.MeshStandardMaterial({color:0x1f3547, roughness:.86});
-const pantsMat = new THREE.MeshStandardMaterial({color:0x252b34, roughness:.82});
-const bootMat = new THREE.MeshStandardMaterial({color:0x3b2416, roughness:.78});
-const leatherMat = new THREE.MeshStandardMaterial({color:0x20150f, roughness:.72});
-const hairMat = new THREE.MeshStandardMaterial({color:0x21150f, roughness:.88});
-const eyeWhiteMat = new THREE.MeshStandardMaterial({color:0xf3ead9, roughness:.55});
-const eyeMat = new THREE.MeshStandardMaterial({color:0x16100d, roughness:.38});
+// Escala geral
+character.scale.setScalar(0.82);
 
-const hatMat = new THREE.MeshStandardMaterial({color:0x1c120c, roughness:.82});
-const clothMat = new THREE.MeshStandardMaterial({color:0xd8d0bd, roughness:.92});
+/* ---------- MATERIAIS ---------- */
 
-function detailMesh(geo, mat, pos, scale=null){
-  const m=new THREE.Mesh(geo,mat); m.position.copy(pos); if(scale)m.scale.copy(scale); m.castShadow=true; m.receiveShadow=true; return m;
+const skinMat = new THREE.MeshStandardMaterial({
+  color:0xc88768,
+  roughness:.78
+});
+
+const skinDarkMat = new THREE.MeshStandardMaterial({
+  color:0x8f5542,
+  roughness:.86
+});
+
+const skinLightMat = new THREE.MeshStandardMaterial({
+  color:0xd79a7c,
+  roughness:.72
+});
+
+const shirtMat = new THREE.MeshStandardMaterial({
+  color:0x31546b,
+  roughness:.88
+});
+
+const shirtDarkMat = new THREE.MeshStandardMaterial({
+  color:0x1d3546,
+  roughness:.92
+});
+
+const pantsMat = new THREE.MeshStandardMaterial({
+  color:0x252a30,
+  roughness:.88
+});
+
+const bootMat = new THREE.MeshStandardMaterial({
+  color:0x352117,
+  roughness:.82
+});
+
+const leatherMat = new THREE.MeshStandardMaterial({
+  color:0x20140d,
+  roughness:.76
+});
+
+const hairMat = new THREE.MeshStandardMaterial({
+  color:0x21150f,
+  roughness:.92
+});
+
+const eyeWhiteMat = new THREE.MeshStandardMaterial({
+  color:0xf1e7d8,
+  roughness:.55
+});
+
+const eyeMat = new THREE.MeshStandardMaterial({
+  color:0x24150f,
+  roughness:.35
+});
+
+const lipMat = new THREE.MeshStandardMaterial({
+  color:0x713d38,
+  roughness:.75
+});
+
+const hatMat = new THREE.MeshStandardMaterial({
+  color:0x17100b,
+  roughness:.9
+});
+
+function humanMesh(geo,mat,x,y,z,sx=1,sy=1,sz=1){
+
+  const m = new THREE.Mesh(geo,mat);
+
+  m.position.set(x,y,z);
+  m.scale.set(sx,sy,sz);
+
+  m.castShadow = true;
+  m.receiveShadow = true;
+
+  return m;
 }
 
-/* pernas */
-const leftLeg=new THREE.Group(), rightLeg=new THREE.Group();
-leftLeg.position.set(-.19,.98,0); rightLeg.position.set(.19,.98,0);
+/* ============================================================
+   PERNAS
+   ============================================================ */
+
+const leftLeg = new THREE.Group();
+const rightLeg = new THREE.Group();
+
+leftLeg.position.set(-.17,.95,0);
+rightLeg.position.set(.17,.95,0);
+
 character.add(leftLeg,rightLeg);
-const thighGeo=new THREE.CapsuleGeometry(.145,.34,8,16);
-const calfGeo=new THREE.CapsuleGeometry(.115,.34,8,16);
-const thighL=detailMesh(thighGeo,pantsMat,new THREE.Vector3(0,-.19,0)); leftLeg.add(thighL);
-const thighR=thighL.clone(); rightLeg.add(thighR);
-const calfL=detailMesh(calfGeo,pantsMat,new THREE.Vector3(0,-.58,0)); leftLeg.add(calfL);
-const calfR=calfL.clone(); rightLeg.add(calfR);
-const bootGeo=new THREE.CapsuleGeometry(.115,.24,8,16);
-const bootL=detailMesh(bootGeo,bootMat,new THREE.Vector3(0,-.91,.055),new THREE.Vector3(1,.8,1.35)); leftLeg.add(bootL);
-const bootR=bootL.clone(); rightLeg.add(bootR);
 
-/* quadril e tronco */
-const hips=detailMesh(new THREE.CapsuleGeometry(.30,.18,8,16),pantsMat,new THREE.Vector3(0,1.10,0)); character.add(hips);
-const torso=detailMesh(new THREE.CapsuleGeometry(.37,.56,10,20),shirtMat,new THREE.Vector3(0,1.52,0),new THREE.Vector3(1.02,.98,.78)); character.add(torso);
-const shirtHem=detailMesh(new THREE.CylinderGeometry(.30,.35,.16,16),shirtDarkMat,new THREE.Vector3(0,1.24,0)); character.add(shirtHem);
-const belt=detailMesh(new THREE.CylinderGeometry(.34,.34,.075,18),leatherMat,new THREE.Vector3(0,1.25,0)); character.add(belt);
-const buckle=detailMesh(new THREE.BoxGeometry(.15,.14,.035),goldMat,new THREE.Vector3(0,1.25,.345)); character.add(buckle);
+const thighGeo = new THREE.CapsuleGeometry(
+  .145,
+  .38,
+  8,
+  16
+);
 
-/* pescoço e cabeça */
-const neck=detailMesh(new THREE.CylinderGeometry(.13,.15,.18,12),skinMat,new THREE.Vector3(0,1.91,0)); character.add(neck);
-const headGroup=new THREE.Group(); headGroup.position.y=2.17; character.add(headGroup);
-const head=detailMesh(new THREE.SphereGeometry(.35,32,24),skinMat,new THREE.Vector3(0,0,0),new THREE.Vector3(.9,1,.82)); headGroup.add(head);
-const earGeo=new THREE.SphereGeometry(.075,12,12);
-headGroup.add(detailMesh(earGeo,skinMat,new THREE.Vector3(-.31,0,0)));
-headGroup.add(detailMesh(earGeo,skinMat,new THREE.Vector3(.31,0,0)));
+const calfGeo = new THREE.CapsuleGeometry(
+  .105,
+  .36,
+  8,
+  16
+);
 
-/* cabelo e barba */
-const hair=detailMesh(new THREE.SphereGeometry(.355,32,20,0,Math.PI*2,0,Math.PI*.52),hairMat,new THREE.Vector3(0,.10,0),new THREE.Vector3(1,.9,1)); headGroup.add(hair);
-const sideHairL=detailMesh(new THREE.BoxGeometry(.075,.24,.17),hairMat,new THREE.Vector3(-.29,-.03,.02));
-const sideHairR=sideHairL.clone(); sideHairR.position.x=.29; headGroup.add(sideHairL,sideHairR);
+leftLeg.add(
+  humanMesh(
+    thighGeo,
+    pantsMat,
+    0,-.20,0,
+    1,1,1
+  )
+);
 
-/* feições faciais humanas */
-const eyeGeo=new THREE.SphereGeometry(.055,12,10);
-const eyeL=detailMesh(eyeGeo,eyeWhiteMat,new THREE.Vector3(-.115,.045,.31),new THREE.Vector3(1,.9,.5)); headGroup.add(eyeL);
-const eyeR=eyeL.clone(); eyeR.position.x=.115; headGroup.add(eyeR);
-const pupilGeo=new THREE.SphereGeometry(.026,10,10);
-headGroup.add(detailMesh(pupilGeo,eyeMat,new THREE.Vector3(-.115,.045,.34)));
-headGroup.add(detailMesh(pupilGeo,eyeMat,new THREE.Vector3(.115,.045,.34)));
-const browMat=hairMat;
-headGroup.add(detailMesh(new THREE.CapsuleGeometry(.018,.09,4,8),browMat,new THREE.Vector3(-.115,.13,.315),new THREE.Vector3(1,.6,.8)));
-headGroup.add(detailMesh(new THREE.CapsuleGeometry(.018,.09,4,8),browMat,new THREE.Vector3(.115,.13,.315),new THREE.Vector3(1,.6,.8)));
-const nose=detailMesh(new THREE.ConeGeometry(.045,.13,10),skinDarkMat,new THREE.Vector3(0,-.005,.34)); nose.rotation.x=Math.PI/2; headGroup.add(nose);
-const mouth=detailMesh(new THREE.BoxGeometry(.13,.025,.018),skinDarkMat,new THREE.Vector3(0,-.135,.325)); headGroup.add(mouth);
-const beard=detailMesh(new THREE.SphereGeometry(.18,16,12),hairMat,new THREE.Vector3(0,-.16,.19),new THREE.Vector3(.78,.48,.52)); headGroup.add(beard);
+rightLeg.add(
+  humanMesh(
+    thighGeo,
+    pantsMat,
+    0,-.20,0,
+    1,1,1
+  )
+);
+
+leftLeg.add(
+  humanMesh(
+    calfGeo,
+    pantsMat,
+    0,-.58,0
+  )
+);
+
+rightLeg.add(
+  humanMesh(
+    calfGeo,
+    pantsMat,
+    0,-.58,0
+  )
+);
+
+/* ---------- botas ---------- */
+
+function makeBoot(){
+
+  const g = new THREE.Group();
+
+  const boot = humanMesh(
+    new THREE.CapsuleGeometry(
+      .12,
+      .25,
+      8,
+      14
+    ),
+    bootMat,
+    0,
+    0,
+    .055,
+    1,
+    .82,
+    1.4
+  );
+
+  g.add(boot);
+
+  const sole = humanMesh(
+    new THREE.BoxGeometry(
+      .25,
+      .045,
+      .42
+    ),
+    leatherMat,
+    0,
+    -.13,
+    .10
+  );
+
+  g.add(sole);
+
+  return g;
+}
+
+const bootL = makeBoot();
+const bootR = makeBoot();
+
+bootL.position.set(0,-.91,0);
+bootR.position.set(0,-.91,0);
+
+leftLeg.add(bootL);
+rightLeg.add(bootR);
+
+/* ============================================================
+   QUADRIL
+   ============================================================ */
+
+const hips = humanMesh(
+  new THREE.CapsuleGeometry(
+    .28,
+    .20,
+    8,
+    16
+  ),
+  pantsMat,
+  0,
+  1.08,
+  0,
+  1.05,
+  .85,
+  .82
+);
+
+character.add(hips);
+
+/* ============================================================
+   TRONCO
+   ============================================================ */
+
+const torso = humanMesh(
+  new THREE.CapsuleGeometry(
+    .34,
+    .52,
+    10,
+    20
+  ),
+  shirtMat,
+  0,
+  1.52,
+  0,
+  1.0,
+  1.05,
+  .82
+);
+
+character.add(torso);
+
+/* peito */
+
+const chest = humanMesh(
+  new THREE.SphereGeometry(
+    .34,
+    20,
+    14
+  ),
+  shirtMat,
+  0,
+  1.63,
+  .035,
+  1.02,
+  .65,
+  .78
+);
+
+character.add(chest);
+
+/* cintura */
+
+const belt = humanMesh(
+  new THREE.CylinderGeometry(
+    .30,
+    .32,
+    .07,
+    20
+  ),
+  leatherMat,
+  0,
+  1.27,
+  0
+);
+
+character.add(belt);
+
+const buckle = humanMesh(
+  new THREE.BoxGeometry(
+    .14,
+    .13,
+    .035
+  ),
+  goldMat,
+  0,
+  1.27,
+  .31
+);
+
+character.add(buckle);
+
+/* ============================================================
+   PESCOÇO
+   ============================================================ */
+
+const neck = humanMesh(
+  new THREE.CylinderGeometry(
+    .115,
+    .135,
+    .20,
+    16
+  ),
+  skinMat,
+  0,
+  1.91,
+  0
+);
+
+character.add(neck);
+
+/* ============================================================
+   CABEÇA
+   ============================================================ */
+
+const headGroup = new THREE.Group();
+
+headGroup.position.y = 2.16;
+
+character.add(headGroup);
+
+/* formato da cabeça */
+
+const head = humanMesh(
+  new THREE.SphereGeometry(
+    .34,
+    32,
+    24
+  ),
+  skinMat,
+  0,
+  0,
+  0,
+  .90,
+  1.02,
+  .86
+);
+
+headGroup.add(head);
+
+/* mandíbula */
+
+const jaw = humanMesh(
+  new THREE.SphereGeometry(
+    .255,
+    24,
+    18
+  ),
+  skinMat,
+  0,
+  -.12,
+  .025,
+  1.03,
+  .72,
+  .84
+);
+
+headGroup.add(jaw);
+
+/* queixo */
+
+const chin = humanMesh(
+  new THREE.SphereGeometry(
+    .11,
+    16,
+    12
+  ),
+  skinLightMat,
+  0,
+  -.22,
+  .26,
+  1.0,
+  .7,
+  .75
+);
+
+headGroup.add(chin);
+
+/* ============================================================
+   ORELHAS
+   ============================================================ */
+
+const earGeo = new THREE.SphereGeometry(
+  .075,
+  16,
+  12
+);
+
+headGroup.add(
+  humanMesh(
+    earGeo,
+    skinMat,
+    -.315,
+    0,
+    0
+  )
+);
+
+headGroup.add(
+  humanMesh(
+    earGeo,
+    skinMat,
+    .315,
+    0,
+    0
+  )
+);
+
+/* ============================================================
+   CABELO
+   ============================================================ */
+
+const hair = humanMesh(
+  new THREE.SphereGeometry(
+    .355,
+    32,
+    20,
+    0,
+    Math.PI*2,
+    0,
+    Math.PI*.55
+  ),
+  hairMat,
+  0,
+  .10,
+  -.015,
+  1,
+  .92,
+  .94
+);
+
+headGroup.add(hair);
+
+/* costeletas */
+
+for(const side of [-1,1]){
+
+  const sideHair = humanMesh(
+    new THREE.BoxGeometry(
+      .075,
+      .23,
+      .16
+    ),
+    hairMat,
+    side*.285,
+    -.02,
+    .01
+  );
+
+  headGroup.add(sideHair);
+}
+
+/* ============================================================
+   OLHOS
+   ============================================================ */
+
+const eyeGeo = new THREE.SphereGeometry(
+  .055,
+  16,
+  12
+);
+
+const eyeL = humanMesh(
+  eyeGeo,
+  eyeWhiteMat,
+  -.115,
+  .045,
+  .292,
+  1,
+  .88,
+  .52
+);
+
+const eyeR = eyeL.clone();
+eyeR.position.x = .115;
+
+headGroup.add(eyeL,eyeR);
+
+/* pupilas */
+
+const pupilGeo = new THREE.SphereGeometry(
+  .027,
+  12,
+  10
+);
+
+headGroup.add(
+  humanMesh(
+    pupilGeo,
+    eyeMat,
+    -.115,
+    .045,
+    .326
+  )
+);
+
+headGroup.add(
+  humanMesh(
+    pupilGeo,
+    eyeMat,
+    .115,
+    .045,
+    .326
+  )
+);
+
+/* sobrancelhas */
+
+const browGeo = new THREE.CapsuleGeometry(
+  .018,
+  .095,
+  4,
+  8
+);
+
+const browL = humanMesh(
+  browGeo,
+  hairMat,
+  -.115,
+  .125,
+  .305,
+  1,
+  .6,
+  .8
+);
+
+const browR = browL.clone();
+
+browR.position.x=.115;
+
+headGroup.add(browL,browR);
+
+/* ============================================================
+   NARIZ MAIS NATURAL
+   ============================================================ */
+
+const noseBridge = humanMesh(
+  new THREE.CapsuleGeometry(
+    .035,
+    .105,
+    5,
+    10
+  ),
+  skinLightMat,
+  0,
+  -.005,
+  .315,
+  1,
+  1,
+  .75
+);
+
+noseBridge.rotation.x = Math.PI/2;
+
+headGroup.add(noseBridge);
+
+const noseTip = humanMesh(
+  new THREE.SphereGeometry(
+    .045,
+    12,
+    10
+  ),
+  skinLightMat,
+  0,
+  -.065,
+  .335,
+  1.15,
+  .85,
+  .9
+);
+
+headGroup.add(noseTip);
+
+/* ============================================================
+   BOCA
+   ============================================================ */
+
+const mouth = humanMesh(
+  new THREE.BoxGeometry(
+    .14,
+    .025,
+    .018
+  ),
+  lipMat,
+  0,
+  -.145,
+  .305
+);
+
+headGroup.add(mouth);
+
+/* lábio inferior */
+
+const lowerLip = humanMesh(
+  new THREE.SphereGeometry(
+    .045,
+    12,
+    8
+  ),
+  skinDarkMat,
+  0,
+  -.165,
+  .315,
+  1.4,
+  .45,
+  .6
+);
+
+headGroup.add(lowerLip);
+
+/* ============================================================
+   BARBA
+   ============================================================ */
+
+const beard = humanMesh(
+  new THREE.SphereGeometry(
+    .18,
+    20,
+    16
+  ),
+  hairMat,
+  0,
+  -.145,
+  .20,
+  .78,
+  .55,
+  .62
+);
+
+headGroup.add(beard);
+
+/* bigode */
+
+for(const side of [-1,1]){
+
+  const moustache = humanMesh(
+    new THREE.SphereGeometry(
+      .065,
+      12,
+      8
+    ),
+    hairMat,
+    side*.055,
+    -.10,
+    .315,
+    1.2,
+    .55,
+    .6
+  );
+
+  moustache.rotation.z = side*.18;
+
+  headGroup.add(moustache);
+}
+
+/* ============================================================
+   BRAÇOS
+   ============================================================ */
+
+const leftArm = new THREE.Group();
+const rightArm = new THREE.Group();
+
+leftArm.position.set(-.42,1.72,0);
+rightArm.position.set(.42,1.72,0);
+
+character.add(leftArm,rightArm);
+
+/* ombros */
+
+const shoulderGeo = new THREE.SphereGeometry(
+  .145,
+  16,
+  12
+);
+
+leftArm.add(
+  humanMesh(
+    shoulderGeo,
+    shirtMat,
+    0,0,0
+  )
+);
+
+rightArm.add(
+  humanMesh(
+    shoulderGeo,
+    shirtMat,
+    0,0,0
+  )
+);
 
 /* braços */
-const leftArm=new THREE.Group(), rightArm=new THREE.Group();
-leftArm.position.set(-.43,1.72,0); rightArm.position.set(.43,1.72,0); character.add(leftArm,rightArm);
-const shoulderGeo=new THREE.SphereGeometry(.145,14,12);
-leftArm.add(detailMesh(shoulderGeo,shirtMat,new THREE.Vector3(0,0,0))); rightArm.add(detailMesh(shoulderGeo,shirtMat,new THREE.Vector3(0,0,0)));
-const upperGeo=new THREE.CapsuleGeometry(.105,.34,6,12);
-const upperL=detailMesh(upperGeo,shirtMat,new THREE.Vector3(0,-.24,0)); leftArm.add(upperL); const upperR=upperL.clone(); rightArm.add(upperR);
-const elbowGeo=new THREE.SphereGeometry(.105,12,10);
-leftArm.add(detailMesh(elbowGeo,skinMat,new THREE.Vector3(0,-.47,0))); rightArm.add(detailMesh(elbowGeo,skinMat,new THREE.Vector3(0,-.47,0)));
-const foreGeo=new THREE.CapsuleGeometry(.085,.31,6,12);
-const foreL=detailMesh(foreGeo,skinMat,new THREE.Vector3(0,-.67,0)); leftArm.add(foreL); const foreR=foreL.clone(); rightArm.add(foreR);
-const handGeo=new THREE.SphereGeometry(.105,14,12);
-leftArm.add(detailMesh(handGeo,skinMat,new THREE.Vector3(0,-.88,0))); rightArm.add(detailMesh(handGeo,skinMat,new THREE.Vector3(0,-.88,0)));
 
-/* chapéu */
-const hatGroup=new THREE.Group(); hatGroup.position.y=.36; headGroup.add(hatGroup);
-const brim=detailMesh(new THREE.CylinderGeometry(.45,.45,.06,24),hatMat,new THREE.Vector3(0,0,0),new THREE.Vector3(1,.9,.82)); hatGroup.add(brim);
-const crown=detailMesh(new THREE.CylinderGeometry(.27,.35,.32,16),hatMat,new THREE.Vector3(0,.17,0)); hatGroup.add(crown);
-const band=detailMesh(new THREE.CylinderGeometry(.315,.315,.075,16),leatherMat,new THREE.Vector3(0,.08,0)); hatGroup.add(band);
-const buckleHat=detailMesh(new THREE.BoxGeometry(.10,.10,.025),goldMat,new THREE.Vector3(0,.10,.32)); hatGroup.add(buckleHat);
-const feather=detailMesh(new THREE.ConeGeometry(.045,.42,8),clothMat,new THREE.Vector3(.13,.40,.02),new THREE.Vector3(1,.8,1)); feather.rotation.z=-.35; hatGroup.add(feather);
+const upperArmGeo = new THREE.CapsuleGeometry(
+  .105,
+  .32,
+  7,
+  12
+);
 
-character.traverse(o=>{if(o.isMesh){o.castShadow=true;o.receiveShadow=true;}});
-player.position.set(SHIP_POS.x,SHIP_DECK_Y,SHIP_POS.z);
-const playerShadow=new THREE.Mesh(new THREE.CircleGeometry(.48,24),new THREE.MeshBasicMaterial({color:0x000000,transparent:true,opacity:.24,depthWrite:false}));
-playerShadow.rotation.x=-Math.PI/2; playerShadow.position.y=.02; playerShadow.scale.set(1,.55,1); scene.add(playerShadow);
+leftArm.add(
+  humanMesh(
+    upperArmGeo,
+    shirtMat,
+    0,-.23,0
+  )
+);
+
+rightArm.add(
+  humanMesh(
+    upperArmGeo,
+    shirtMat,
+    0,-.23,0
+  )
+);
+
+/* cotovelos */
+
+const elbowGeo = new THREE.SphereGeometry(
+  .105,
+  14,
+  12
+);
+
+leftArm.add(
+  humanMesh(
+    elbowGeo,
+    skinMat,
+    0,-.46,0
+  )
+);
+
+rightArm.add(
+  humanMesh(
+    elbowGeo,
+    skinMat,
+    0,-.46,0
+  )
+);
+
+/* antebraços */
+
+const forearmGeo = new THREE.CapsuleGeometry(
+  .083,
+  .30,
+  7,
+  12
+);
+
+leftArm.add(
+  humanMesh(
+    forearmGeo,
+    skinMat,
+    0,-.66,0
+  )
+);
+
+rightArm.add(
+  humanMesh(
+    forearmGeo,
+    skinMat,
+    0,-.66,0
+  )
+);
+
+/* ============================================================
+   MÃOS COM DEDOS
+   ============================================================ */
+
+function makeHand(){
+
+  const hand = new THREE.Group();
+
+  const palm = humanMesh(
+    new THREE.SphereGeometry(
+      .105,
+      16,
+      12
+    ),
+    skinMat,
+    0,
+    0,
+    0,
+    .9,
+    1.15,
+    .8
+  );
+
+  hand.add(palm);
+
+  // quatro dedos
+  for(let i=0;i<4;i++){
+
+    const finger = humanMesh(
+      new THREE.CapsuleGeometry(
+        .023,
+        .085,
+        5,
+        8
+      ),
+      skinLightMat,
+      -.055 + i*.037,
+      -.075,
+      .045,
+      .9,
+      1,
+      .75
+    );
+
+    finger.rotation.x = -.18;
+
+    hand.add(finger);
+  }
+
+  // polegar
+  const thumb = humanMesh(
+    new THREE.CapsuleGeometry(
+      .025,
+      .09,
+      5,
+      8
+    ),
+    skinMat,
+    .095,
+    -.015,
+    .025
+  );
+
+  thumb.rotation.z = -.65;
+
+  hand.add(thumb);
+
+  return hand;
+}
+
+const handL = makeHand();
+const handR = makeHand();
+
+handL.position.set(0,-.88,0);
+handR.position.set(0,-.88,0);
+
+leftArm.add(handL);
+rightArm.add(handR);
+
+/* ============================================================
+   CHAPÉU
+   ============================================================ */
+
+const hatGroup = new THREE.Group();
+
+hatGroup.position.y=.36;
+
+headGroup.add(hatGroup);
+
+const brim = humanMesh(
+  new THREE.CylinderGeometry(
+    .43,
+    .43,
+    .055,
+    28
+  ),
+  hatMat,
+  0,
+  0,
+  0,
+  1,
+  .9,
+  .82
+);
+
+hatGroup.add(brim);
+
+const crown = humanMesh(
+  new THREE.CylinderGeometry(
+    .27,
+    .34,
+    .30,
+    18
+  ),
+  hatMat,
+  0,
+  .17,
+  0
+);
+
+hatGroup.add(crown);
+
+const hatBand = humanMesh(
+  new THREE.CylinderGeometry(
+    .315,
+    .315,
+    .065,
+    18
+  ),
+  leatherMat,
+  0,
+  .08,
+  0
+);
+
+hatGroup.add(hatBand);
+
+const buckleHat = humanMesh(
+  new THREE.BoxGeometry(
+    .095,
+    .095,
+    .025
+  ),
+  goldMat,
+  0,
+  .09,
+  .32
+);
+
+hatGroup.add(buckleHat);
+
+/* ============================================================
+   ANIMAÇÃO
+   ============================================================ */
+
+character.traverse(o=>{
+
+  if(o.isMesh){
+
+    o.castShadow=true;
+    o.receiveShadow=true;
+
+  }
+
+});
+
+player.position.set(
+  SHIP_POS.x,
+  SHIP_DECK_Y,
+  SHIP_POS.z
+);
+
+const playerShadow = new THREE.Mesh(
+  new THREE.CircleGeometry(.48,24),
+  new THREE.MeshBasicMaterial({
+    color:0x000000,
+    transparent:true,
+    opacity:.24,
+    depthWrite:false
+  })
+);
+
+playerShadow.rotation.x=-Math.PI/2;
+playerShadow.position.y=.02;
+playerShadow.scale.set(1,.55,1);
+
+scene.add(playerShadow);
 scene.add(player);
+
 state.startPos.copy(player.position);
-const playerState={velocityY:0,onGround:true,speed:0,yaw:0,run:false,walkTime:0};
+
+const playerState = {
+  velocityY:0,
+  onGround:true,
+  speed:0,
+  yaw:0,
+  run:false,
+  walkTime:0
+};
 
 /* ------------------------- Câmera terceira pessoa ------------------------- */
 const camState = { yaw:Math.PI, pitch:0.28, dist:6.8 };
@@ -1261,15 +2302,45 @@ let lastTime = performance.now();
 let footstepAccum=0;
 
 function computeGroundHeight(worldX, worldZ){
-  const localX = worldX-SHIP_POS.x, localZ = worldZ-SHIP_POS.z;
-  if(Math.abs(localX)<SHIP_WORLD_W/2-0.22 && Math.abs(localZ)<SHIP_WORLD_L/2-0.22){
-    return {y:SHIP_DECK_Y, zone:'ship'};
+  const localX = worldX - SHIP_POS.x;
+  const localZ = worldZ - SHIP_POS.z;
+
+  const halfW = SHIP_COLLISION.halfW - SHIP_COLLISION.margin;
+  const halfL = SHIP_COLLISION.halfL - SHIP_COLLISION.margin;
+
+  // Convés real do navio
+  if(
+    Math.abs(localX) < halfW &&
+    Math.abs(localZ) < halfL
+  ){
+    return {
+      y: SHIP_DECK_Y,
+      zone: 'ship'
+    };
   }
-  if(Math.abs(worldX)<0.9 && worldZ>plankStartZ-0.3 && worldZ<plankEndZ+0.3){
-    return {y:plankHeightAt(worldZ), zone:'plank'};
+
+  // Prancha de desembarque
+  if(
+    Math.abs(worldX) < 0.9 &&
+    worldZ > plankStartZ - 0.5 &&
+    worldZ < plankEndZ + 0.5
+  ){
+    return {
+      y: plankHeightAt(worldZ),
+      zone: 'plank'
+    };
   }
+
+  // Ilha
   const h = islandHeightAt(worldX,worldZ);
-  if(h!==null) return {y:h, zone:'island'};
+
+  if(h !== null){
+    return {
+      y:h,
+      zone:'island'
+    };
+  }
+
   return null;
 }
 
@@ -1324,12 +2395,61 @@ function updatePlayer(dt){
       else player.position.x+=minD;
     }
   }
-  const sx=player.position.x-SHIP_POS.x, sz=player.position.z-SHIP_POS.z;
-  if(Math.abs(sx)<deckW/2+.2 && Math.abs(sz)<deckL/2+.2){
-    const margin=.48;
-    if(Math.abs(sx)>deckW/2-margin) player.position.x=SHIP_POS.x+Math.sign(sx)*(deckW/2-margin);
-    if(Math.abs(sz)>deckL/2-margin) player.position.z=SHIP_POS.z+Math.sign(sz)*(deckL/2-margin);
+  /* ============================================================
+   COLISÃO REAL DO NAVIO
+   Usa as dimensões já multiplicadas pelo SHIP_SCALE.
+   ============================================================ */
+
+{
+  const sx = player.position.x - SHIP_POS.x;
+  const sz = player.position.z - SHIP_POS.z;
+
+  const halfW = SHIP_COLLISION.halfW;
+  const halfL = SHIP_COLLISION.halfL;
+
+  const insideShip =
+    Math.abs(sx) < halfW &&
+    Math.abs(sz) < halfL;
+
+  if(insideShip){
+
+    // Abertura frontal para a prancha
+    const isFrontExit =
+      sz > halfL - SHIP_COLLISION.frontExitDepth &&
+      Math.abs(sx) < SHIP_COLLISION.frontExitWidth;
+
+    if(!isFrontExit){
+
+      const safeHalfW =
+        halfW - SHIP_COLLISION.margin;
+
+      const safeHalfL =
+        halfL - SHIP_COLLISION.margin;
+
+      // Limite lateral
+      if(Math.abs(sx) > safeHalfW){
+        player.position.x =
+          SHIP_POS.x +
+          Math.sign(sx) * safeHalfW;
+      }
+
+      // Limite traseiro
+      if(sz < -safeHalfL){
+        player.position.z =
+          SHIP_POS.z - safeHalfL;
+      }
+
+      // Limite frontal
+      if(
+        sz > safeHalfL &&
+        !isFrontExit
+      ){
+        player.position.z =
+          SHIP_POS.z + safeHalfL;
+      }
+    }
   }
+}
 
   {
     const cx = SHIP_POS.x-2.7*SHIP_SCALE, cz = SHIP_POS.z-5.0*SHIP_SCALE;
