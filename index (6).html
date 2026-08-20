@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Teia na Noite</title>
+<style>
+  html,body{margin:0;padding:0;background:#000;overflow:hidden;height:100%;}
+  canvas{display:block;touch-action:none;background:#000;}
+  #hint{
+    position:fixed;bottom:8px;left:50%;transform:translateX(-50%);
+    color:#888;font:12px monospace;text-align:center;pointer-events:none;
+    text-shadow:0 0 4px #000;
+  }
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+<div id="hint">clique/toque e segure para lançar a teia · setas ◀ ▶ para embalar o balanço</div>
+<script>
+(function(){
+"use strict";
+
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+let W, H;
+function resize(){ W = canvas.width = window.innerWidth; H = canvas.height = window.innerHeight; }
+window.addEventListener('resize', resize);
+
+// ---------- constantes do mundo ----------
+const WALL_X = 150;          // borda direita do prédio (x < WALL_X é parede)
+const GRAVITY = 0.45;
+const SWING_GRAVITY = 0.30;
+const AIR_FRICTION = 0.997;
+const MAX_WEB_DIST = 340;
+const MIN_WEB_DIST = 50;
+const PUMP_ACCEL = 0.55;
+const WIN_HEIGHT = 6000;     // altura (em px de mundo) para vencer
+const FALL_LIMIT = 420;      // cair mais que isso abaixo do início = perde
+
+// ---------- estado ----------
+let state = 'menu'; // menu | playing | gameover | win
+let best = 0;
+let player, web, cameraY, buildings, keys = {}, mouse = {x:0,y:0,has:false};
+let shakeT = 0;
+
+function resetGame(){
+  player = { x: WALL_X + 150, y: 0, vx: 0, vy: 0, r: 15, lean: 0 };
+  web = { active:false, x:0, y:0, len:0 };
+  cameraY = player.y - H*0.55;
+  genBuildings();
+  shakeT = 0;
+}
+
+function genBuildings(){
+  buildings = [];
+  for(let i=0;i<60;i++){
+    buildings.push({
+      x: WALL_X + 230 + Math.random()*320,
+      y: -i*230 - Math.random()*180,
+      w: 50 + Math.random()*100,
+      h: 150 + Math.random()*260,
+      shade: 18 + Math.floor(Math.random()*35)
+    });
+  }
+}
+
+function startGame(){ state = 'playing'; resetGame(); }
+
+// ---------- input ----------
+function worldFromClient(cx, cy){
+  const rect = canvas.getBoundingClientRect();
+  const sx = cx - rect.left, sy = cy - rect.top;
+  return { x: sx, y: sy + cameraY };
+}
+
+function shootWeb(cx, cy){
+  const p = worldFromClient(cx, cy);
+  if(p.x < WALL_X + player.r + 25) return false; // não gruda na parede proibida
+  const dx = p.x - player.x, dy = p.y - player.y;
+  const dist = Math.hypot(dx, dy);
+  if(dist > MAX_WEB_DIST || dist < MIN_WEB_DIST) return false;
+  web.active = true; web.x = p.x; web.y = p.y; web.len = dist;
+  return true;
+}
+
+function pointerDown(cx, cy){
+  if(state !== 'playing'){ startGame(); return; }
+  shootWeb(cx, cy);
+}
+function pointerUp(){ web.active = false; }
+
+canvas.addEventListener('mousedown', e => pointerDown(e.clientX, e.clientY));
+canvas.addEventListener('mouseup', pointerUp);
+canvas.addEventListener('mousemove', e => { mouse.x=e.clientX; mouse.y=e.clientY; mouse.has=true; });
+
+canvas.addEventListener('touchstart', e => {
+  e.preventDefault();
+  const t = e.touches[0];
+  mouse.x=t.clientX; mouse.y=t.clientY; mouse.has=true;
+  pointerDown(t.clientX, t.clientY);
+}, {passive:false});
+canvas.addEventListener('touchmove', e => {
+  e.preventDefault();
+  const t = e.touches[0];
+  mouse.x=t.clientX; mouse.y=t.clientY;
+}, {passive:false});
+canvas.addEventListener('touchend', e => { e.preventDefault(); pointerUp(); }, {passive:false});
+
+window.addEventListener('keydown', e => {
+  keys[e.key] = true;
+  if(e.key === ' ') web.active = false;
+  if(e.key === 'Enter' && state !== 'playing') startGame();
+});
+window.addEventListener('keyup', e => { keys[e.key] = false; });
+
+// ---------- física ----------
+function update(){
+  if(web.active){
+    player.vy += SWING_GRAVITY;
+    if(keys['ArrowLeft']  || keys['a']) player.vx -= PUMP_ACCEL;
+    if(keys['ArrowRight'] || keys['d']) player.vx += PUMP_ACCEL;
+    player.x += player.vx;
+    player.y += player.vy;
+
+    const dx = player.x - web.x, dy = player.y - web.y;
+    const dist = Math.hypot(dx, dy) || 1;
+    const nx = dx/dist, ny = dy/dist;
+    const radial = player.vx*nx + player.vy*ny;
+    player.vx -= radial*nx;
+    player.vy -= radial*ny;
+    player.x = web.x + nx*web.len;
+    player.y = web.y + ny*web.len;
+    player.vx *= 0.999;
+    player.lean = player.vx*0.03;
+  } else {
+    player.vy += GRAVITY;
+    player.vx *= AIR_FRICTION;
+    player.x += player.vx;
+    player.y += player.vy;
+    player.lean = player.vx*0.04;
+  }
+
+  if(player.vy > 20) player.vy = 20;
+
+  if(player.x - player.r <= WALL_X){
+    triggerEnd('gameover', true);
+    return;
+  }
+  if(player.y > FALL_LIMIT){
+    triggerEnd('gameover', false);
+    return;
+  }
+  if(-player.y >= WIN_HEIGHT){
+    triggerEnd('win', false);
+    return;
+  }
+
+  const targetCam = player.y - H*0.55;
+  cameraY += (targetCam - cameraY) * 0.12;
+  if(shakeT > 0) shakeT--;
+}
+
+function triggerEnd(newState, crashed){
+  state = newState;
+  const h = Math.max(0, Math.floor(-player.y/10));
+  if(h > best) best = h;
+  if(crashed) shakeT = 18;
+}
+
+// ---------- desenho ----------
+function drawWall(){
+  const top = cameraY - 100, bottom = cameraY + H + 100;
+  ctx.fillStyle = '#141414';
+  ctx.fillRect(0, top, WALL_X, bottom-top);
+  ctx.strokeStyle = '#333';
+  ctx.lineWidth = 1;
+
+  const rowH = 46, colW = 34;
+  const startRow = Math.floor(top/rowH)*rowH;
+  for(let y = startRow; y < bottom; y += rowH){
+    for(let x = 8; x < WALL_X-14; x += colW){
+      const lit = ((Math.floor(x/colW)+Math.floor(y/rowH)*7) % 5) === 0;
+      ctx.fillStyle = lit ? '#3a3a3a' : '#0a0a0a';
+      ctx.fillRect(x, y+8, colW-10, rowH-16);
+      ctx.strokeRect(x, y+8, colW-10, rowH-16);
+    }
+  }
+  // borda da parede (limite fatal)
+  ctx.strokeStyle = '#888';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(WALL_X, top);
+  ctx.lineTo(WALL_X, bottom);
+  ctx.stroke();
+}
+
+function drawBuildingsBg(){
+  buildings.forEach(b=>{
+    ctx.fillStyle = `rgb(${b.shade},${b.shade},${b.shade})`;
+    ctx.fillRect(b.x, b.y, b.w, b.h);
+    ctx.fillStyle = '#000';
+    for(let wy=b.y+10; wy<b.y+b.h-10; wy+=22){
+      for(let wx=b.x+8; wx<b.x+b.w-8; wx+=16){
+        ctx.fillRect(wx, wy, 6, 10);
+      }
+    }
+  });
+}
+
+function drawPlayer(){
+  ctx.save();
+  ctx.translate(player.x, player.y);
+  ctx.rotate(Math.max(-0.6, Math.min(0.6, player.lean)));
+
+  if(web.active){
+    ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(0, -4);
+    ctx.lineTo(web.x-player.x, web.y-player.y);
+    ctx.stroke();
+  }
+
+  ctx.fillStyle = '#eee';
+  ctx.strokeStyle = '#000';
+  ctx.lineWidth = 2;
+  // corpo
+  ctx.beginPath();
+  ctx.ellipse(0, 8, 9, 14, 0, 0, Math.PI*2);
+  ctx.fill(); ctx.stroke();
+  // cabeça
+  ctx.beginPath();
+  ctx.arc(0, -14, 8, 0, Math.PI*2);
+  ctx.fill(); ctx.stroke();
+  // pernas
+  ctx.beginPath();
+  ctx.moveTo(-4,20); ctx.lineTo(-9,34);
+  ctx.moveTo(4,20); ctx.lineTo(9,34);
+  ctx.stroke();
+  // braco livre
+  ctx.beginPath();
+  ctx.moveTo(-8,2); ctx.lineTo(-18,-6);
+  ctx.stroke();
+
+  ctx.restore();
+}
+
+function drawWebLine(){
+  if(!web.active) return;
+  ctx.fillStyle = '#fff';
+  ctx.beginPath();
+  ctx.arc(web.x, web.y, 4, 0, Math.PI*2);
+  ctx.fill();
+}
+
+function drawAimHelper(){
+  if(state!=='playing' || web.active || !mouse.has) return;
+  ctx.save();
+  ctx.translate(0,-cameraY);
+  ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+  ctx.setLineDash([4,6]);
+  ctx.beginPath();
+  ctx.arc(player.x, player.y, MAX_WEB_DIST, 0, Math.PI*2);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  const p = worldFromClient(mouse.x, mouse.y);
+  const dist = Math.hypot(p.x-player.x, p.y-player.y);
+  const valid = p.x > WALL_X + player.r + 25 && dist<=MAX_WEB_DIST && dist>=MIN_WEB_DIST;
+  ctx.strokeStyle = valid ? '#fff' : '#555';
+  ctx.beginPath();
+  ctx.arc(p.x, p.y, 7, 0, Math.PI*2);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawHUD(){
+  const h = Math.max(0, Math.floor(-player.y/10));
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 20px monospace';
+  ctx.textAlign = 'left';
+  ctx.fillText('ALTURA: ' + h + 'm', 16, 30);
+  ctx.font = '13px monospace';
+  ctx.fillStyle = '#999';
+  ctx.fillText('recorde: ' + best + 'm', 16, 50);
+}
+
+function centeredText(lines, startY, mainFont){
+  ctx.textAlign = 'center';
+  lines.forEach((l,i)=>{
+    ctx.font = i===0 ? mainFont : '16px monospace';
+    ctx.fillStyle = i===0 ? '#fff' : '#aaa';
+    ctx.fillText(l, W/2, startY + i*30);
+  });
+}
+
+function drawOverlay(title, sub1, sub2){
+  ctx.fillStyle = 'rgba(0,0,0,0.55)';
+  ctx.fillRect(0,0,W,H);
+  centeredText([title, sub1, sub2], H/2 - 30, 'bold 34px monospace');
+}
+
+function drawMenu(){
+  drawOverlay('TEIA NA NOITE', 'suba o prédio lançando teias — não encoste na parede',
+    'clique / toque para começar');
+}
+function drawGameOver(){
+  const h = Math.max(0, Math.floor(-player.y/10));
+  drawOverlay('VOCÊ CAIU', 'altura alcançada: ' + h + 'm  ·  recorde: ' + best + 'm',
+    'clique / toque para tentar de novo');
+}
+function drawWin(){
+  drawOverlay('TOPO DO PRÉDIO!', 'você chegou ao alto  ·  recorde: ' + best + 'm',
+    'clique / toque para jogar de novo');
+}
+
+function draw(){
+  ctx.clearRect(0,0,W,H);
+  ctx.fillStyle = '#050505';
+  ctx.fillRect(0,0,W,H);
+
+  // lua fixa de fundo
+  ctx.fillStyle = '#1c1c1c';
+  ctx.beginPath(); ctx.arc(W-90, 90, 45, 0, Math.PI*2); ctx.fill();
+
+  let sx = 0, sy = 0;
+  if(shakeT>0){ sx = (Math.random()-0.5)*10; sy = (Math.random()-0.5)*10; }
+
+  ctx.save();
+  ctx.translate(sx, sy - cameraY);
+  drawBuildingsBg();
+  drawWall();
+  drawWebLine();
+  drawPlayer();
+  ctx.restore();
+
+  drawAimHelper();
+  if(state==='playing') drawHUD();
+  if(state==='menu') drawMenu();
+  if(state==='gameover') drawGameOver();
+  if(state==='win') drawWin();
+}
+
+function loop(){
+  if(state==='playing') update();
+  draw();
+  requestAnimationFrame(loop);
+}
+
+resize();
+resetGame();
+loop();
+})();
+</script>
+</body>
+</html>
